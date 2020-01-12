@@ -30,7 +30,7 @@ struct TextureTile
 
 struct TextureSheet
 {
-    const Texture *texture;
+    std::unique_ptr<Texture> texture;
     std::vector<TextureTile> tiles;
 };
 
@@ -233,21 +233,20 @@ int main()
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     {
-        const auto initialize_sheet = [](Texture &texture, TextureSheet &sheet, const char *image) {
-            auto pm = load_pixmap_from_png(image);
-            texture.set_data(*pm);
+        const auto initialize_sheet = [](TextureSheet &sheet, const char *image) {
+            sheet.texture.reset(new Texture);
 
-            sheet.texture = &texture;
+            auto pm = load_pixmap_from_png(image);
+            sheet.texture->set_data(*pm);
+
             sheet.tiles.push_back({"test", {{{0, 0}, {1, 0}, {1, 1}, {0, 1}}}, &sheet});
         };
 
-        Texture texture0;
         TextureSheet sheet0;
-        initialize_sheet(texture0, sheet0, "resources/images/gvim.png");
+        initialize_sheet(sheet0, "resources/images/gvim.png");
 
-        Texture texture1;
         TextureSheet sheet1;
-        initialize_sheet(texture1, sheet1, "resources/images/firefox.png");
+        initialize_sheet(sheet1, "resources/images/firefox.png");
 
         const auto *tile0 = &sheet0.tiles.back();
         const auto *tile1 = &sheet1.tiles.back();
