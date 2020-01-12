@@ -4,7 +4,6 @@
 
 #include <array>
 #include <fstream>
-#include <sstream>
 
 #include <glm/gtc/type_ptr.hpp>
 
@@ -18,16 +17,25 @@ ShaderProgram::~ShaderProgram()
     glDeleteProgram(id_);
 }
 
-void ShaderProgram::add_shader(GLenum type, std::string_view filename)
+void ShaderProgram::add_shader(GLenum type, const std::string &filename)
 {
     const auto shader_id = glCreateShader(type);
 
-    const auto source = [filename] {
-        std::ifstream file(filename.data());
-        std::stringstream buffer;
-        buffer << file.rdbuf();
-        return buffer.str();
-    }();
+    std::ifstream file(filename);
+    if (!file.is_open())
+        panic("failed to open %s\n", std::string(filename).c_str());
+
+    auto *buf = file.rdbuf();
+
+    const std::size_t size = buf->pubseekoff(0, file.end, file.in);
+    buf->pubseekpos(0, file.in);
+
+    std::vector<char> source(size + 1);
+    buf->sgetn(source.data(), size);
+    source[size] = 0;
+
+    file.close();
+
     const auto source_ptr = source.data();
     glShaderSource(shader_id, 1, &source_ptr, nullptr);
     glCompileShader(shader_id);
