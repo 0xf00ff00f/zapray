@@ -8,8 +8,10 @@ conan_basic_setup()
 
 add_executable(demo
     main.cpp
+    trajectory.cpp
     pixmap.cpp
     texture.cpp
-    shaderprogram.cpp)
+    shaderprogram.cpp
+    spritebatcher.cpp)
 
 target_link_libraries(demo ${CONAN_LIBS})
