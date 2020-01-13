@@ -12,6 +12,7 @@ add_executable(demo
     pixmap.cpp
     texture.cpp
     shaderprogram.cpp
-    spritebatcher.cpp)
+    spritebatcher.cpp
+    util.cpp)
 
 target_link_libraries(demo ${CONAN_LIBS})

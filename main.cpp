@@ -6,6 +6,7 @@
 #include "texture.h"
 #include "geometry.h"
 #include "trajectory.h"
+#include "util.h"
 
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
@@ -15,6 +16,9 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/string_cast.hpp>
 
+#include <rapidjson/document.h>
+
+#include <cassert>
 #include <array>
 #include <vector>
 #include <algorithm>
@@ -45,7 +49,6 @@ struct Level
 struct Foe
 {
     Foe(const Wave *wave);
-
     float speed;
     const Trajectory *trajectory;
     glm::vec2 position;
@@ -237,51 +240,63 @@ void World::advance_foes()
     }
 }
 
-std::unique_ptr<Level> create_test_level()
+// TODO: replace asserts with proper error checking and reporting (... maybe)
+
+static glm::vec2 parse_vec2(const rapidjson::Value &value)
 {
-    const PathSegment segment0{{{{-20, 160}, {440, 80}, {360, 300}, {-20, 440}}}}; // omg so many braces
-    const Path path0 = {segment0};
+    assert(value.IsArray());
+    auto array = value.GetArray();
+    assert(array.Size() == 2);
+    return glm::vec2(array[0].GetDouble(), array[1].GetDouble());
+}
 
-    const PathSegment segment1{{{{420, 160}, {-40, 80}, {40, 300}, {420, 440}}}};
-    const Path path1 = {segment1};
+static PathSegment parse_path_segment(const rapidjson::Value &value)
+{
+    assert(value.IsArray());
+    auto array = value.GetArray();
+    assert(array.Size() == 4);
+    return {parse_vec2(array[0]), parse_vec2(array[1]), parse_vec2(array[2]), parse_vec2(array[3])};
+}
 
-    const PathSegment segment2{{{{-20, -20}, {60, 480}, {120, 400}, {280, -20}}}};
-    const Path path2 = {segment2};
+static std::unique_ptr<Level> load_level(const std::string &filename)
+{
+    const auto json = load_file(filename);
 
-    auto trajectory0 = std::make_unique<Trajectory>(path0);
-    auto trajectory1 = std::make_unique<Trajectory>(path1);
-    auto trajectory2 = std::make_unique<Trajectory>(path2);
-
-    auto wave0 = std::make_unique<Wave>();
-    wave0->start_tic = 0;
-    wave0->spawn_interval = 50;
-    wave0->spawn_count = 5;
-    wave0->foe_speed = 1.5;
-    wave0->trajectory = trajectory0.get();
-
-    auto wave1 = std::make_unique<Wave>();
-    wave1->start_tic = 350;
-    wave1->spawn_interval = 50;
-    wave1->spawn_count = 5;
-    wave1->foe_speed = 1.5;
-    wave1->trajectory = trajectory1.get();
-
-    auto wave2 = std::make_unique<Wave>();
-    wave2->start_tic = 600;
-    wave2->spawn_interval = 50;
-    wave2->spawn_count = 3;
-    wave2->foe_speed = 1.5;
-    wave2->trajectory = trajectory2.get();
+    rapidjson::Document document;
+    rapidjson::ParseResult ok = document.Parse<rapidjson::kParseCommentsFlag>(json.data());
+    assert(ok);
 
     auto level = std::make_unique<Level>();
 
-    level->trajectories.push_back(std::move(trajectory0));
-    level->trajectories.push_back(std::move(trajectory1));
-    level->trajectories.push_back(std::move(trajectory2));
+    const auto trajectories = document["trajectories"].GetArray();
+    for (const auto &value : trajectories)
+    {
+        assert(value.IsArray());
 
-    level->waves.push_back(std::move(wave0));
-    level->waves.push_back(std::move(wave1));
-    level->waves.push_back(std::move(wave2));
+        // TODO path should be an array of segments, not a single segment
+        auto segment = parse_path_segment(value);
+        const Path path = {segment};
+
+        level->trajectories.emplace_back(new Trajectory(path));
+    }
+
+    const auto waves = document["waves"].GetArray();
+    for (const auto &value : waves)
+    {
+        assert(value.IsObject());
+
+        auto wave = std::make_unique<Wave>();
+        wave->start_tic = value["start_tic"].GetInt();
+        wave->spawn_interval = value["spawn_interval"].GetInt();
+        wave->spawn_count = value["spawn_count"].GetInt();
+        wave->foe_speed = value["foe_speed"].GetDouble();
+
+        const auto trajectory_index = value["trajectory"].GetInt();
+        assert(trajectory_index >= 0 && trajectory_index < level->trajectories.size());
+        wave->trajectory = level->trajectories[trajectory_index].get();
+
+        level->waves.push_back(std::move(wave));
+    }
 
     return level;
 }
@@ -336,7 +351,7 @@ int main()
         }
 
         {
-            auto level = create_test_level();
+            auto level = load_level("resources/levels/level-0.json");
 
             World world(window_width, window_height);
             world.initialize_level(level.get());
