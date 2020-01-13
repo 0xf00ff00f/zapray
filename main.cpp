@@ -245,7 +245,7 @@ void World::advance_foes()
 static glm::vec2 parse_vec2(const rapidjson::Value &value)
 {
     assert(value.IsArray());
-    auto array = value.GetArray();
+    const auto array = value.GetArray();
     assert(array.Size() == 2);
     return glm::vec2(array[0].GetDouble(), array[1].GetDouble());
 }
@@ -253,9 +253,21 @@ static glm::vec2 parse_vec2(const rapidjson::Value &value)
 static PathSegment parse_path_segment(const rapidjson::Value &value)
 {
     assert(value.IsArray());
-    auto array = value.GetArray();
+    const auto array = value.GetArray();
     assert(array.Size() == 4);
     return {parse_vec2(array[0]), parse_vec2(array[1]), parse_vec2(array[2]), parse_vec2(array[3])};
+}
+
+static std::unique_ptr<Trajectory> parse_trajectory(const rapidjson::Value &value)
+{
+    assert(value.IsArray());
+    const auto array = value.GetArray();
+    Path path;
+    for (const auto &segment : array)
+    {
+        path.push_back(parse_path_segment(segment));
+    }
+    return std::make_unique<Trajectory>(path);
 }
 
 static std::unique_ptr<Level> load_level(const std::string &filename)
@@ -271,13 +283,7 @@ static std::unique_ptr<Level> load_level(const std::string &filename)
     const auto trajectories = document["trajectories"].GetArray();
     for (const auto &value : trajectories)
     {
-        assert(value.IsArray());
-
-        // TODO path should be an array of segments, not a single segment
-        auto segment = parse_path_segment(value);
-        const Path path = {segment};
-
-        level->trajectories.emplace_back(new Trajectory(path));
+        level->trajectories.push_back(parse_trajectory(value));
     }
 
     const auto waves = document["waves"].GetArray();
