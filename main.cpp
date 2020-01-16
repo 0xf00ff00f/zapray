@@ -6,6 +6,7 @@
 #include "texture.h"
 #include "geometry.h"
 #include "trajectory.h"
+#include "tilesheet.h"
 #include "util.h"
 
 #include <GL/glew.h>
@@ -28,7 +29,7 @@
 
 #define DRAW_ACTIVE_TRAJECTORIES
 
-TextureSheet *g_sprite_sheet;
+std::unique_ptr<TileSheet> g_sprite_sheet;
 SpriteBatcher *g_sprite_batcher;
 
 struct Wave
@@ -151,7 +152,7 @@ void World::render()
 
     g_sprite_batcher->start_batch();
 
-    const auto *tile = &g_sprite_sheet->tiles.front(); // XXX should make tiles a vector of unique_ptr
+    const auto *tile = g_sprite_sheet->tiles.front().get();
     const auto hsize = 20.f;
 
     for (const auto &foe : foes_)
@@ -263,10 +264,10 @@ static std::unique_ptr<Trajectory> parse_trajectory(const rapidjson::Value &valu
     assert(value.IsArray());
     const auto array = value.GetArray();
     Path path;
-    for (const auto &segment : array)
-    {
-        path.push_back(parse_path_segment(segment));
-    }
+    path.reserve(array.Size());
+    std::transform(array.begin(), array.end(), std::back_inserter(path), [](const rapidjson::Value &value) {
+        return parse_path_segment(value);
+    });
     return std::make_unique<Trajectory>(path);
 }
 
@@ -341,20 +342,10 @@ int main()
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     {
-        // sprite sheet
-        {
-            g_sprite_sheet = new TextureSheet;
-            g_sprite_sheet->texture.reset(new Texture);
-            auto pm = load_pixmap_from_png("resources/images/gvim.png");
-            g_sprite_sheet->texture->set_data(*pm);
-            g_sprite_sheet->tiles.push_back({"test", {{{0, 1}, {0, 0}, {1, 0}, {1, 1}}}, g_sprite_sheet});
-        }
+        g_sprite_sheet = load_tilesheet("resources/tilesheets/sheet.json");
 
-        // batcher
-        {
-            g_sprite_batcher = new SpriteBatcher;
-            g_sprite_batcher->set_view_rectangle(0, window_width, 0, window_height);
-        }
+        g_sprite_batcher = new SpriteBatcher;
+        g_sprite_batcher->set_view_rectangle(0, window_width, 0, window_height);
 
         {
             auto level = load_level("resources/levels/level-0.json");
@@ -376,7 +367,7 @@ int main()
         }
 
         delete g_sprite_batcher;
-        delete g_sprite_sheet;
+        g_sprite_sheet.reset();
     }
 
     glfwDestroyWindow(window);

@@ -2,6 +2,8 @@
 
 #include "shaderprogram.h"
 
+#include "tilesheet.h"
+
 #include <glm/vec2.hpp>
 #include <GL/glew.h>
 
@@ -10,24 +12,6 @@
 #include <array>
 #include <vector>
 #include <memory>
-
-using QuadVerts = std::array<glm::vec2, 4>;
-
-class Texture;
-struct TextureSheet;
-
-struct TextureTile
-{
-    std::string name;
-    QuadVerts texture_coords;
-    const TextureSheet *sheet;
-};
-
-struct TextureSheet
-{
-    std::unique_ptr<Texture> texture;
-    std::vector<TextureTile> tiles;
-};
 
 class SpriteBatcher : private boost::noncopyable
 {
@@ -38,7 +22,7 @@ public:
     void set_view_rectangle(float left, float right, float bottom, float top);
 
     void start_batch();
-    void add_sprite(const TextureTile *tile, const QuadVerts &verts, int depth);
+    void add_sprite(const Tile *tile, const QuadVerts &verts, int depth);
     void render_batch() const;
 
 private:
@@ -47,11 +31,11 @@ private:
 
     struct Quad
     {
-        const TextureTile *tile;
+        const Tile *tile;
         QuadVerts verts;
         int depth;
 
-        Quad(const TextureTile *tile, const QuadVerts &verts, int depth)
+        Quad(const Tile *tile, const QuadVerts &verts, int depth)
             : tile(tile)
             , verts(verts)
             , depth(depth)

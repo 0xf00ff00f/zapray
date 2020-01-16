@@ -12,6 +12,7 @@ add_executable(demo
     pixmap.cpp
     texture.cpp
     shaderprogram.cpp
+    tilesheet.cpp
     spritebatcher.cpp
     util.cpp)
 

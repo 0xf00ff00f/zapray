@@ -27,7 +27,7 @@ void SpriteBatcher::start_batch()
     quads_.clear();
 }
 
-void SpriteBatcher::add_sprite(const TextureTile *tile, const QuadVerts &verts, int depth)
+void SpriteBatcher::add_sprite(const Tile *tile, const QuadVerts &verts, int depth)
 {
     quads_.emplace_back(tile, verts, depth);
 }
@@ -52,7 +52,7 @@ void SpriteBatcher::render_batch() const
     program_.set_uniform(program_.uniform_location("mvp"), projection_matrix_);
     program_.set_uniform(program_.uniform_location("sprite_texture"), 0);
 
-    const TextureSheet *cur_texture_sheet = nullptr;
+    const TileSheet *cur_texture_sheet = nullptr;
     auto *data = data_start;
 
     int draw_calls = 0;
