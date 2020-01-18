@@ -28,9 +28,12 @@
 #include <iostream>
 
 #define DRAW_ACTIVE_TRAJECTORIES
+#define DRAW_COLLISIONS
 
 std::unique_ptr<TileSheet> g_sprite_sheet;
 SpriteBatcher *g_sprite_batcher;
+
+constexpr const auto SpriteScale = 2.0f;
 
 enum
 {
@@ -78,6 +81,97 @@ Foe::Foe(const Wave *wave)
 {
 }
 
+struct Sprite
+{
+public:
+    Sprite(const Tile *tile);
+
+    const Tile *tile;
+
+    bool collides_with(const Sprite &other, const glm::vec2 &pos) const;
+
+private:
+    void initialize_mask();
+
+    std::vector<uint64_t> masks_; // for collision detection
+};
+
+Sprite::Sprite(const Tile *tile)
+    : tile(tile)
+{
+    initialize_mask();
+}
+
+bool Sprite::collides_with(const Sprite &other, const glm::vec2 &pos) const
+{
+    const auto cols = tile->size.x;
+    const auto rows = tile->size.y;
+
+    const auto other_cols = other.tile->size.x;
+    const auto other_rows = other.tile->size.y;
+
+    const auto row_offset = static_cast<int>(pos.y);
+    const auto col_offset = static_cast<int>(pos.x);
+
+    if (col_offset >= cols || col_offset < -other_cols)
+        return false;
+
+    assert(masks_.size() == rows);
+
+    for (int row = 0; row < rows; ++row)
+    {
+        const auto other_row = row + row_offset;
+        if (other_row >= 0 && other_row < other_rows)
+        {
+            const auto mask = masks_[row];
+            const auto other_mask = other.masks_[other_row];
+            if (col_offset > 0)
+            {
+                if (mask & (other_mask >> col_offset))
+                    return true;
+            }
+            else
+            {
+                if (mask & (other_mask << -col_offset))
+                    return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+void Sprite::initialize_mask()
+{
+    const auto *pm = tile->texture->pixmap();
+    assert(pm->type == Pixmap::PixelType::RGBAlpha); // XXX for now
+
+    const uint32_t *pixels = reinterpret_cast<const uint32_t *>(pm->pixels.data());
+
+    masks_.reserve(tile->size.y);
+
+    for (int i = 0; i < tile->size.y; ++i)
+    {
+        uint64_t mask = 0;
+        for (int j = 0; j < tile->size.x; ++j)
+        {
+            uint32_t pixel = pixels[(i + tile->position.y) * pm->width + j + tile->position.x];
+            mask <<= 1;
+            if ((pixel >> 24) > 0x7f)
+            {
+                mask |= 1;
+                std::cout << '*';
+            }
+            else
+            {
+                std::cout << '.';
+            }
+        }
+        masks_.push_back(mask);
+        std::cout << '\n';
+    }
+}
+
 constexpr const int TicsPerSecond = 60;
 
 class World
@@ -109,6 +203,8 @@ private:
     std::vector<std::unique_ptr<ActiveWave>> active_waves_;
     std::vector<Foe> foes_;
     Player player_;
+    Sprite player_sprite_; // XXX for now
+    Sprite foe_sprite_; // XXX for now
     float timestamp_ = 0.0f; // milliseconds
     int cur_tic_ = 0;
 #ifdef DRAW_ACTIVE_TRAJECTORIES
@@ -118,6 +214,8 @@ private:
 
 // XXX shouldn't need to pass window_width/height here
 World::World(int window_width, int window_height)
+    : player_sprite_(g_sprite_sheet->find_tile("stella.png"))
+    , foe_sprite_(g_sprite_sheet->find_tile("mame.png"))
 {
     player_.position = glm::vec2(0.5f * window_width, 0.5f * window_height);
 
@@ -141,6 +239,15 @@ void World::initialize_level(const Level *level)
 
     timestamp_ = 0.0f;
     int cur_tic_ = 0;
+
+#if 0
+    {
+        const auto *wave = level->waves.front().get();
+        Foe foe(wave);
+        foe.position = {50.f, 200.f};
+        foes_.push_back(foe);
+    }
+#endif
 
     advance_waves();
 }
@@ -168,20 +275,35 @@ void World::render()
     }
 #endif
 
+#ifdef DRAW_COLLISIONS
+    {
+        bool has_collisions = std::any_of(foes_.begin(), foes_.end(), [this](const Foe &foe) {
+            const auto pos = (1.0f / SpriteScale) * (player_.position - foe.position);
+            return foe_sprite_.collides_with(player_sprite_, pos);
+        });
+        if (has_collisions)
+        {
+            glClearColor(1, 0, 0, 1);
+            glClear(GL_COLOR_BUFFER_BIT);
+        }
+    }
+#endif
+
     g_sprite_batcher->start_batch();
 
     const auto draw_tile = [](const Tile *tile, const glm::vec2 &pos) {
-        const auto hsize = 20.f;
+        const auto half_width = 0.5f * tile->size.x * SpriteScale;
+        const auto half_height = 0.5f * tile->size.y * SpriteScale;
         g_sprite_batcher->add_sprite(tile, {
-                {pos + glm::vec2(-hsize, -hsize),
-                pos + glm::vec2(-hsize, hsize),
-                pos + glm::vec2(hsize, hsize),
-                pos + glm::vec2(hsize, -hsize)}},
+                {pos + glm::vec2(-half_width, -half_height),
+                 pos + glm::vec2(-half_width, half_height),
+                 pos + glm::vec2(half_width, half_height),
+                 pos + glm::vec2(half_width, -half_height)}},
                 0);
     };
 
-    const auto *foe_tile = g_sprite_sheet->find_tile("firefox.png");
-    const auto *player_tile = g_sprite_sheet->find_tile("psi.png");
+    const auto *foe_tile = foe_sprite_.tile;
+    const auto *player_tile = player_sprite_.tile;
 
     for (const auto &foe : foes_)
     {
