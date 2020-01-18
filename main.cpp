@@ -32,6 +32,15 @@
 std::unique_ptr<TileSheet> g_sprite_sheet;
 SpriteBatcher *g_sprite_batcher;
 
+enum
+{
+    DPad_Up     = 1,
+    DPad_Down   = 2,
+    DPad_Left   = 4,
+    DPad_Right  = 8,
+};
+unsigned g_dpad_state = 0;
+
 struct Wave
 {
     int start_tic;
@@ -45,6 +54,11 @@ struct Level
 {
     std::vector<std::unique_ptr<Trajectory>> trajectories;
     std::vector<std::unique_ptr<Wave>> waves;
+};
+
+struct Player
+{
+    glm::vec2 position;
 };
 
 struct Foe
@@ -78,6 +92,7 @@ public:
 private:
     void advance_waves();
     void advance_foes();
+    void advance_player();
 
     const Level *cur_level_ = nullptr;
 
@@ -92,6 +107,7 @@ private:
 
     std::vector<std::unique_ptr<ActiveWave>> active_waves_;
     std::vector<Foe> foes_;
+    Player player_;
     float timestamp_ = 0.0f; // milliseconds
     int cur_tic_ = 0;
 #ifdef DRAW_ACTIVE_TRAJECTORIES
@@ -102,6 +118,8 @@ private:
 // XXX shouldn't need to pass window_width/height here
 World::World(int window_width, int window_height)
 {
+    player_.position = glm::vec2(0.5f * window_width, 0.5f * window_height);
+
 #ifdef DRAW_ACTIVE_TRAJECTORIES
     trajectory_program_.add_shader(GL_VERTEX_SHADER, "resources/shaders/dummy.vert");
     trajectory_program_.add_shader(GL_FRAGMENT_SHADER, "resources/shaders/dummy.frag");
@@ -137,6 +155,7 @@ void World::advance(float dt)
         ++cur_tic_;
         advance_foes();
         advance_waves();
+        advance_player();
     }
 }
 
@@ -152,19 +171,25 @@ void World::render()
 
     g_sprite_batcher->start_batch();
 
-    const auto *tile = g_sprite_sheet->tiles.front().get();
-    const auto hsize = 20.f;
-
-    for (const auto &foe : foes_)
-    {
-        const auto pos = foe.position;
+    const auto draw_tile = [](const Tile *tile, const glm::vec2 &pos) {
+        const auto hsize = 20.f;
         g_sprite_batcher->add_sprite(tile, {
                 {pos + glm::vec2(-hsize, -hsize),
                 pos + glm::vec2(-hsize, hsize),
                 pos + glm::vec2(hsize, hsize),
                 pos + glm::vec2(hsize, -hsize)}},
                 0);
+    };
+
+    const auto *foe_tile = g_sprite_sheet->tiles[0].get();
+    const auto *player_tile = g_sprite_sheet->tiles[1].get();
+
+    for (const auto &foe : foes_)
+    {
+        draw_tile(foe_tile, foe.position);
     }
+
+    draw_tile(player_tile, player_.position);
 
     g_sprite_batcher->render_batch();
 }
@@ -241,6 +266,20 @@ void World::advance_foes()
     }
 }
 
+void World::advance_player()
+{
+    const float speed = 1.0f;
+
+    if (g_dpad_state & DPad_Up)
+        player_.position += glm::vec2(0.f, speed);
+    if (g_dpad_state & DPad_Down)
+        player_.position += glm::vec2(0.f, -speed);
+    if (g_dpad_state & DPad_Left)
+        player_.position += glm::vec2(-speed, 0.f);
+    if (g_dpad_state & DPad_Right)
+        player_.position += glm::vec2(speed, 0.f);
+}
+
 // TODO: replace asserts with proper error checking and reporting (... maybe)
 
 static glm::vec2 parse_vec2(const rapidjson::Value &value)
@@ -308,6 +347,20 @@ static std::unique_ptr<Level> load_level(const std::string &filename)
     return level;
 }
 
+static void update_dpad_state(GLFWwindow *window)
+{
+    unsigned state = 0;
+    if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS)
+        state |= DPad_Up;
+    if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)
+        state |= DPad_Down;
+    if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)
+        state |= DPad_Left;
+    if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS)
+        state |= DPad_Right;
+    g_dpad_state = state;
+}
+
 int main()
 {
     constexpr auto window_width = 400;
@@ -355,6 +408,8 @@ int main()
 
             while (!glfwWindowShouldClose(window))
             {
+                update_dpad_state(window);
+
                 glClearColor(0, 0, 0, 0);
                 glClear(GL_COLOR_BUFFER_BIT);
 
