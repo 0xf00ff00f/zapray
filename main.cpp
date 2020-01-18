@@ -116,6 +116,9 @@ bool Sprite::collides_with(const Sprite &other, const glm::vec2 &pos) const
     if (col_offset >= cols || col_offset < -other_cols)
         return false;
 
+    if (row_offset >= rows || row_offset < -other_rows)
+        return false;
+
     assert(masks_.size() == rows);
 
     for (int row = 0; row < rows; ++row)
