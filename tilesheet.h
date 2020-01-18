@@ -9,19 +9,22 @@
 using QuadVerts = std::array<glm::vec2, 4>;
 
 class Texture;
-struct TileSheet;
 
 struct Tile
 {
     std::string name;
-    QuadVerts texture_coords;
-    const TileSheet *sheet;
+    glm::ivec2 size;
+    glm::ivec2 position;
+    QuadVerts tex_coords;
+    const Texture *texture;
 };
 
 struct TileSheet
 {
-    std::unique_ptr<Texture> texture;
+    std::vector<std::unique_ptr<Texture>> textures;
     std::vector<std::unique_ptr<Tile>> tiles;
+
+    const Tile *find_tile(std::string_view name) const;
 };
 
 std::unique_ptr<TileSheet> load_tilesheet(const std::string &path);

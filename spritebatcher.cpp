@@ -40,7 +40,7 @@ void SpriteBatcher::render_batch() const
         return &quad;
     });
     std::stable_sort(sorted_quads.begin(), sorted_quads.end(), [](const Quad *a, const Quad *b) {
-        return std::tie(a->depth, a->tile->sheet) < std::tie(b->depth, b->tile->sheet);
+        return std::tie(a->depth, a->tile->texture) < std::tie(b->depth, b->tile->texture);
     });
 
     glBindBuffer(GL_ARRAY_BUFFER, vbo_);
@@ -52,15 +52,15 @@ void SpriteBatcher::render_batch() const
     program_.set_uniform(program_.uniform_location("mvp"), projection_matrix_);
     program_.set_uniform(program_.uniform_location("sprite_texture"), 0);
 
-    const TileSheet *cur_texture_sheet = nullptr;
+    const Texture *cur_texture = nullptr;
     auto *data = data_start;
 
     int draw_calls = 0;
-    const auto do_render = [&cur_texture_sheet, &data_start, &data, &draw_calls] {
+    const auto do_render = [&cur_texture, &data_start, &data, &draw_calls] {
         const auto vertex_count = (data - data_start) / 4;
         if (vertex_count)
         {
-            cur_texture_sheet->texture->bind();
+            cur_texture->bind();
             glDrawArrays(GL_TRIANGLES, 0, vertex_count);
             ++draw_calls;
         }
@@ -69,7 +69,7 @@ void SpriteBatcher::render_batch() const
     for (const auto *quad_ptr : sorted_quads)
     {
         const auto vertex_count = data - data_start;
-        if (quad_ptr->tile->sheet != cur_texture_sheet)
+        if (quad_ptr->tile->texture != cur_texture)
         {
             if (data != data_start)
             {
@@ -77,18 +77,18 @@ void SpriteBatcher::render_batch() const
                 do_render();
                 data_start = reinterpret_cast<GLfloat *>(glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY));
             }
-            cur_texture_sheet = quad_ptr->tile->sheet;
+            cur_texture = quad_ptr->tile->texture;
             data = data_start;
         }
 
         const auto &verts = quad_ptr->verts;
-        const auto &texture_coords = quad_ptr->tile->texture_coords;
+        const auto &tex_coords = quad_ptr->tile->tex_coords;
 
-        const auto emit_vertex = [&data, &verts, &texture_coords](int index) {
+        const auto emit_vertex = [&data, &verts, &tex_coords](int index) {
             *data++ = verts[index].x;
             *data++ = verts[index].y;
-            *data++ = texture_coords[index].x;
-            *data++ = texture_coords[index].y;
+            *data++ = tex_coords[index].x;
+            *data++ = tex_coords[index].y;
         };
 
         emit_vertex(0); emit_vertex(1); emit_vertex(2);

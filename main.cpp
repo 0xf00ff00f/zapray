@@ -90,6 +90,7 @@ public:
     void render();
 
 private:
+    void advance_one_tic();
     void advance_waves();
     void advance_foes();
     void advance_player();
@@ -153,9 +154,7 @@ void World::advance(float dt)
     {
         timestamp_ -= MillisecondsPerTic;
         ++cur_tic_;
-        advance_foes();
-        advance_waves();
-        advance_player();
+        advance_one_tic();
     }
 }
 
@@ -181,8 +180,8 @@ void World::render()
                 0);
     };
 
-    const auto *foe_tile = g_sprite_sheet->tiles[0].get();
-    const auto *player_tile = g_sprite_sheet->tiles[1].get();
+    const auto *foe_tile = g_sprite_sheet->find_tile("firefox.png");
+    const auto *player_tile = g_sprite_sheet->find_tile("psi.png");
 
     for (const auto &foe : foes_)
     {
@@ -213,6 +212,13 @@ World::ActiveWave::ActiveWave(const Wave *wave)
 
     geometry.set_data(verts);
 #endif
+}
+
+void World::advance_one_tic()
+{
+    advance_waves();
+    advance_foes();
+    advance_player();
 }
 
 void World::advance_waves()
@@ -268,7 +274,7 @@ void World::advance_foes()
 
 void World::advance_player()
 {
-    const float speed = 1.0f;
+    const float speed = 2.0f;
 
     if (g_dpad_state & DPad_Up)
         player_.position += glm::vec2(0.f, speed);

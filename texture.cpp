@@ -2,9 +2,11 @@
 
 #include "pixmap.h"
 
-Texture::Texture()
+Texture::Texture(const char *path)
+    : pixmap_(load_pixmap_from_png(path))
 {
     glGenTextures(1, &id_);
+    set_data(*pixmap_);
 }
 
 Texture::~Texture()
@@ -33,4 +35,9 @@ void Texture::set_data(const Pixmap &pm)
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, pm.width, pm.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pm.pixels.data());
 
     unbind();
+}
+
+const Pixmap *Texture::pixmap() const
+{
+    return pixmap_.get();
 }
