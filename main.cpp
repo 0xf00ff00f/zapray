@@ -33,7 +33,27 @@
 std::unique_ptr<TileSheet> g_sprite_sheet;
 SpriteBatcher *g_sprite_batcher;
 
-constexpr const auto SpriteScale = 2.0f;
+static constexpr const auto SpriteScale = 2.0f;
+
+static constexpr const auto MissileSpawnInterval = 16;
+
+static void draw_tile(const Tile *tile, const glm::vec2 &pos, int depth)
+{
+    const auto half_width = 0.5f * tile->size.x * SpriteScale;
+    const auto half_height = 0.5f * tile->size.y * SpriteScale;
+
+    const auto p0 = pos + glm::vec2(-half_width, -half_height);
+    const auto p1 = pos + glm::vec2(-half_width, half_height);
+    const auto p2 = pos + glm::vec2(half_width, half_height);
+    const auto p3 = pos + glm::vec2(half_width, -half_height);
+
+    g_sprite_batcher->add_sprite(tile, {{p0, p1, p2, p3}}, depth);
+}
+
+static glm::vec2 tile_top_left(const Tile *tile, const glm::vec2 &center)
+{
+    return center - 0.5f * SpriteScale * glm::vec2(tile->size);
+}
 
 enum
 {
@@ -41,6 +61,7 @@ enum
     DPad_Down   = 2,
     DPad_Left   = 4,
     DPad_Right  = 8,
+    DPad_Button = 16,
 };
 unsigned g_dpad_state = 0;
 
@@ -61,8 +82,22 @@ struct Level
 
 struct Player
 {
+    Player();
+
+    std::vector<const Tile *> frames;
     glm::vec2 position;
+    int cur_frame = 0;
+    int fire_interval = 0;
 };
+
+Player::Player()
+{
+    const auto frame_tiles = {"player-0.png", "player-1.png", "player-2.png", "player-3.png"};
+    for (const auto tile : frame_tiles)
+    {
+        frames.push_back(g_sprite_sheet->find_tile(tile));
+    }
+}
 
 struct Foe
 {
@@ -80,6 +115,11 @@ Foe::Foe(const Wave *wave)
     , trajectory_position(0.0f)
 {
 }
+
+struct Missile
+{
+    glm::vec2 position;
+};
 
 struct Sprite
 {
@@ -178,7 +218,7 @@ void Sprite::initialize_mask()
     const auto *pm = tile->texture->pixmap();
     assert(pm->type == Pixmap::PixelType::RGBAlpha); // XXX for now
 
-    const uint32_t *pixels = reinterpret_cast<const uint32_t *>(pm->pixels.data());
+    const auto *pixels = reinterpret_cast<const uint32_t *>(pm->pixels.data());
 
     masks_.reserve(tile->size.y);
 
@@ -201,6 +241,12 @@ void Sprite::initialize_mask()
     }
 }
 
+static bool test_collision(const Sprite &sprite1, const glm::vec2 &pos1, const Sprite &sprite2, const glm::vec2 &pos2)
+{
+    const auto pos = (1.0f / SpriteScale) * (tile_top_left(sprite1.tile, pos1) - tile_top_left(sprite2.tile, pos2));
+    return sprite2.collides_with(sprite1, pos);
+}
+
 constexpr const int TicsPerSecond = 60;
 
 class World
@@ -217,6 +263,8 @@ private:
     void advance_waves();
     void advance_foes();
     void advance_player();
+    void advance_missiles();
+    void spawn_missiles();
 
     const Level *cur_level_ = nullptr;
 
@@ -229,11 +277,15 @@ private:
 #endif
     };
 
+    int width_;
+    int height_;
     std::vector<std::unique_ptr<ActiveWave>> active_waves_;
     std::vector<Foe> foes_;
+    std::vector<Missile> missiles_;
     Player player_;
     Sprite player_sprite_; // XXX for now
     Sprite foe_sprite_; // XXX for now
+    Sprite missile_sprite_; // XXX for now
     float timestamp_ = 0.0f; // milliseconds
     int cur_tic_ = 0;
 #ifdef DRAW_ACTIVE_TRAJECTORIES
@@ -241,19 +293,21 @@ private:
 #endif
 };
 
-// XXX shouldn't need to pass window_width/height here
-World::World(int window_width, int window_height)
-    : player_sprite_(g_sprite_sheet->find_tile("stella.png"))
-    , foe_sprite_(g_sprite_sheet->find_tile("mame.png"))
+World::World(int width, int height)
+    : width_(width)
+    , height_(height)
+    , player_sprite_(g_sprite_sheet->find_tile("player-0.png"))
+    , foe_sprite_(g_sprite_sheet->find_tile("foe-small.png"))
+    , missile_sprite_(g_sprite_sheet->find_tile("missile.png"))
 {
-    player_.position = glm::vec2(0.5f * window_width, 0.5f * window_height);
+    player_.position = glm::vec2(0.5f * width, 0.5f * height);
 
 #ifdef DRAW_ACTIVE_TRAJECTORIES
     trajectory_program_.add_shader(GL_VERTEX_SHADER, "resources/shaders/dummy.vert");
     trajectory_program_.add_shader(GL_FRAGMENT_SHADER, "resources/shaders/dummy.frag");
     trajectory_program_.link();
 
-    const auto projection_matrix = glm::ortho(0.0f, static_cast<float>(window_width), static_cast<float>(window_height), 0.0f);
+    const auto projection_matrix = glm::ortho(0.0f, static_cast<float>(width), static_cast<float>(height), 0.0f);
     trajectory_program_.bind();
     trajectory_program_.set_uniform(trajectory_program_.uniform_location("mvp"), projection_matrix);
 #endif
@@ -294,11 +348,6 @@ void World::advance(float dt)
     }
 }
 
-static glm::vec2 tile_top_left(const Tile *tile, const glm::vec2 &center)
-{
-    return center - 0.5f * SpriteScale * glm::vec2(tile->size);
-}
-
 void World::render()
 {
 #ifdef DRAW_ACTIVE_TRAJECTORIES
@@ -312,10 +361,7 @@ void World::render()
 #ifdef DRAW_COLLISIONS
     {
         bool has_collisions = std::any_of(foes_.begin(), foes_.end(), [this](const Foe &foe) {
-            const auto pos = (1.0f / SpriteScale) *
-                (tile_top_left(player_sprite_.tile, player_.position) -
-                 tile_top_left(foe_sprite_.tile, foe.position));
-            return foe_sprite_.collides_with(player_sprite_, pos);
+            return test_collision(foe_sprite_, foe.position, player_sprite_, player_.position);
         });
         if (has_collisions)
         {
@@ -327,26 +373,15 @@ void World::render()
 
     g_sprite_batcher->start_batch();
 
-    const auto draw_tile = [](const Tile *tile, const glm::vec2 &pos) {
-        const auto half_width = 0.5f * tile->size.x * SpriteScale;
-        const auto half_height = 0.5f * tile->size.y * SpriteScale;
-        g_sprite_batcher->add_sprite(tile, {
-                {pos + glm::vec2(-half_width, -half_height),
-                 pos + glm::vec2(-half_width, half_height),
-                 pos + glm::vec2(half_width, half_height),
-                 pos + glm::vec2(half_width, -half_height)}},
-                0);
-    };
-
     const auto *foe_tile = foe_sprite_.tile;
-    const auto *player_tile = player_sprite_.tile;
-
     for (const auto &foe : foes_)
-    {
-        draw_tile(foe_tile, foe.position);
-    }
+        draw_tile(foe_tile, foe.position, 0);
 
-    draw_tile(player_tile, player_.position);
+    const auto *missile_tile = missile_sprite_.tile;
+    for (const auto &missile : missiles_)
+        draw_tile(missile_tile, missile.position, 0);
+
+    draw_tile(player_.frames[player_.cur_frame], player_.position, 0);
 
     g_sprite_batcher->render_batch();
 }
@@ -377,6 +412,7 @@ void World::advance_one_tic()
     advance_waves();
     advance_foes();
     advance_player();
+    advance_missiles();
 }
 
 void World::advance_waves()
@@ -430,18 +466,73 @@ void World::advance_foes()
     }
 }
 
+void World::spawn_missiles()
+{
+    missiles_.push_back({player_.position - static_cast<float>(SpriteScale) * glm::vec2(-9.5, 12.5)});
+    missiles_.push_back({player_.position - static_cast<float>(SpriteScale) * glm::vec2(9.5, 12.5)});
+
+    assert(player_.fire_interval == 0);
+    player_.fire_interval = MissileSpawnInterval;
+}
+
 void World::advance_player()
 {
-    const float speed = 2.0f;
+    constexpr float speed = 2.0f;
+    constexpr float Margin = 12;
 
-    if (g_dpad_state & DPad_Up)
-        player_.position += glm::vec2(0.f, -speed);
-    if (g_dpad_state & DPad_Down)
-        player_.position += glm::vec2(0.f, speed);
-    if (g_dpad_state & DPad_Left)
-        player_.position += glm::vec2(-speed, 0.f);
-    if (g_dpad_state & DPad_Right)
-        player_.position += glm::vec2(speed, 0.f);
+    if ((g_dpad_state & DPad_Up) && player_.position.y > Margin)
+        player_.position.y -= speed;
+    if ((g_dpad_state & DPad_Down) && player_.position.y < height_ - Margin)
+        player_.position.y += speed;
+    if ((g_dpad_state & DPad_Left) && player_.position.x > Margin)
+        player_.position.x -= speed;
+    if ((g_dpad_state & DPad_Right) && player_.position.x < width_ - Margin)
+        player_.position.x += speed;
+    if ((g_dpad_state & DPad_Button) && player_.fire_interval == 0)
+        spawn_missiles();
+
+    if (player_.fire_interval)
+        --player_.fire_interval;
+
+    player_.cur_frame = (cur_tic_ / 4) % player_.frames.size();
+}
+
+void World::advance_missiles()
+{
+    constexpr float speed = 9.0f;
+
+    const auto *missile_tile = missile_sprite_.tile;
+    const auto *foe_tile = foe_sprite_.tile;
+
+    const auto &missile_size = missile_tile->size;
+    const float min_y = -SpriteScale * 0.5f * missile_size.y;
+
+    auto it = missiles_.begin();
+    while (it != missiles_.end())
+    {
+        auto &missile = *it;
+        missile.position += glm::vec2(0.f, -speed);
+
+        bool erase_missile;
+        if (missile.position.y < min_y)
+        {
+            erase_missile = true;
+        }
+        else
+        {
+            erase_missile = std::any_of(foes_.begin(), foes_.end(), [this, &missile](const Foe &foe) {
+                return test_collision(missile_sprite_, missile.position, foe_sprite_, foe.position);
+            });
+        }
+        if (erase_missile)
+        {
+            it = missiles_.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
 }
 
 // TODO: replace asserts with proper error checking and reporting (... maybe)
@@ -522,6 +613,8 @@ static void update_dpad_state(GLFWwindow *window)
         state |= DPad_Left;
     if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS)
         state |= DPad_Right;
+    if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS)
+        state |= DPad_Button;
     g_dpad_state = state;
 }
 
