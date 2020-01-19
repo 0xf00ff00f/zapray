@@ -93,7 +93,13 @@ public:
 private:
     void initialize_mask();
 
-    std::vector<uint64_t> masks_; // for collision detection
+    using Word = uint64_t;
+    static constexpr const auto BitsPerWord = 8 * sizeof(Word);
+    using Bitmask = std::vector<Word>;
+
+    bool test_bitmasks(const Bitmask &mask0, const Bitmask &mask1, int offset) const;
+
+    std::vector<Bitmask> masks_;
 };
 
 Sprite::Sprite(const Tile *tile)
@@ -121,24 +127,47 @@ bool Sprite::collides_with(const Sprite &other, const glm::vec2 &pos) const
 
     assert(masks_.size() == rows);
 
-    for (int row = 0; row < rows; ++row)
+    const int start_row = std::max(0, row_offset);
+    const int end_row = std::min(rows, row_offset + other_rows);
+
+    for (int row = start_row; row < end_row; ++row)
     {
-        const auto other_row = row + row_offset;
-        if (other_row >= 0 && other_row < other_rows)
+        const auto other_row = row - row_offset;
+        assert(other_row >= 0 && other_row < other_rows);
+
+        const auto &mask = masks_[row];
+        const auto &other_mask = other.masks_[other_row];
+
+        if (col_offset >= 0)
         {
-            const auto mask = masks_[row];
-            const auto other_mask = other.masks_[other_row];
-            if (col_offset > 0)
-            {
-                if (mask & (other_mask >> col_offset))
-                    return true;
-            }
-            else
-            {
-                if (mask & (other_mask << -col_offset))
-                    return true;
-            }
+            if (test_bitmasks(mask, other_mask, col_offset))
+                return true;
         }
+        else
+        {
+            if (test_bitmasks(other_mask, mask, -col_offset))
+                return true;
+        }
+    }
+
+    return false;
+}
+
+bool Sprite::test_bitmasks(const Bitmask &mask0, const Bitmask &mask1, int shift) const
+{
+    const auto word_offset = shift / BitsPerWord;
+    const auto word_shift = shift % BitsPerWord;
+
+    for (int i = 0, j = word_offset; i < mask1.size() && j < mask0.size(); ++i, ++j)
+    {
+        const auto w0 = mask1[i];
+
+        auto w1 = mask0[j] << word_shift;
+        if (j + 1 < mask0.size())
+            w1 |= (mask0[j + 1] >> (BitsPerWord - word_shift));
+
+        if (w0 & w1)
+            return true;
     }
 
     return false;
@@ -155,23 +184,20 @@ void Sprite::initialize_mask()
 
     for (int i = 0; i < tile->size.y; ++i)
     {
-        uint64_t mask = 0;
+        const auto mask_words = (tile->size.x + BitsPerWord - 1) / BitsPerWord;
+
+        Bitmask mask(mask_words, 0);
+
         for (int j = 0; j < tile->size.x; ++j)
         {
-            uint32_t pixel = pixels[(i + tile->position.y) * pm->width + j + tile->position.x];
-            mask <<= 1;
+            const uint32_t pixel = pixels[(i + tile->position.y) * pm->width + j + tile->position.x];
             if ((pixel >> 24) > 0x7f)
             {
-                mask |= 1;
-                std::cout << '*';
-            }
-            else
-            {
-                std::cout << '.';
+                mask[j / BitsPerWord] |= (1ul << (BitsPerWord - 1 - (j % BitsPerWord)));
             }
         }
-        masks_.push_back(mask);
-        std::cout << '\n';
+
+        masks_.push_back(std::move(mask));
     }
 }
 
@@ -227,7 +253,7 @@ World::World(int window_width, int window_height)
     trajectory_program_.add_shader(GL_FRAGMENT_SHADER, "resources/shaders/dummy.frag");
     trajectory_program_.link();
 
-    const auto projection_matrix = glm::ortho(0.0f, static_cast<float>(window_width), 0.0f, static_cast<float>(window_height));
+    const auto projection_matrix = glm::ortho(0.0f, static_cast<float>(window_width), static_cast<float>(window_height), 0.0f);
     trajectory_program_.bind();
     trajectory_program_.set_uniform(trajectory_program_.uniform_location("mvp"), projection_matrix);
 #endif
@@ -247,12 +273,12 @@ void World::initialize_level(const Level *level)
     {
         const auto *wave = level->waves.front().get();
         Foe foe(wave);
-        foe.position = {50.f, 200.f};
+        foe.position = {250.f, 220.f};
         foes_.push_back(foe);
     }
-#endif
-
+#else
     advance_waves();
+#endif
 }
 
 void World::advance(float dt)
@@ -268,6 +294,11 @@ void World::advance(float dt)
     }
 }
 
+static glm::vec2 tile_top_left(const Tile *tile, const glm::vec2 &center)
+{
+    return center - 0.5f * SpriteScale * glm::vec2(tile->size);
+}
+
 void World::render()
 {
 #ifdef DRAW_ACTIVE_TRAJECTORIES
@@ -281,7 +312,9 @@ void World::render()
 #ifdef DRAW_COLLISIONS
     {
         bool has_collisions = std::any_of(foes_.begin(), foes_.end(), [this](const Foe &foe) {
-            const auto pos = (1.0f / SpriteScale) * (player_.position - foe.position);
+            const auto pos = (1.0f / SpriteScale) *
+                (tile_top_left(player_sprite_.tile, player_.position) -
+                 tile_top_left(foe_sprite_.tile, foe.position));
             return foe_sprite_.collides_with(player_sprite_, pos);
         });
         if (has_collisions)
@@ -402,9 +435,9 @@ void World::advance_player()
     const float speed = 2.0f;
 
     if (g_dpad_state & DPad_Up)
-        player_.position += glm::vec2(0.f, speed);
-    if (g_dpad_state & DPad_Down)
         player_.position += glm::vec2(0.f, -speed);
+    if (g_dpad_state & DPad_Down)
+        player_.position += glm::vec2(0.f, speed);
     if (g_dpad_state & DPad_Left)
         player_.position += glm::vec2(-speed, 0.f);
     if (g_dpad_state & DPad_Right)
@@ -529,7 +562,7 @@ int main()
         g_sprite_sheet = load_tilesheet("resources/tilesheets/sheet.json");
 
         g_sprite_batcher = new SpriteBatcher;
-        g_sprite_batcher->set_view_rectangle(0, window_width, 0, window_height);
+        g_sprite_batcher->set_view_rectangle(0, window_width, window_height, 0);
 
         {
             auto level = load_level("resources/levels/level-0.json");

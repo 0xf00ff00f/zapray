@@ -39,10 +39,10 @@ static std::unique_ptr<Tile> parse_tile(const rapidjson::Value &value, const std
     const float du = static_cast<float>(tile->size.x) / texture_width;
     const float dv = static_cast<float>(tile->size.y) / texture_height;
 
-    tile->tex_coords[0] = {u, v + dv};
-    tile->tex_coords[1] = {u, v};
-    tile->tex_coords[2] = {u + du, v};
-    tile->tex_coords[3] = {u + du, v + dv};
+    tile->tex_coords[0] = {u, v};
+    tile->tex_coords[1] = {u, v + dv};
+    tile->tex_coords[2] = {u + du, v + dv};
+    tile->tex_coords[3] = {u + du, v};
 
     return tile;
 }
