@@ -1,0 +1,22 @@
+v sprite batcher
+v game: animate foes following path
+v load level data from file
+v parse new tilesheet format
+v put pixmap in texture
+v sprite struct (tile + bitmask)
+v collision detection (64-bit bitmask only)
+v collision detection (multi-word bitmask)
+v player bullets
+* scriptable miniboss
+* controllable player ship
+* foe bombs
+* foe classes
+* bullet scripting
+* text renderer
+* score text
+* explosions
+* sprite sheet builder
+* path editor
+* scrolling background
+* networking
+* player-vs-player
