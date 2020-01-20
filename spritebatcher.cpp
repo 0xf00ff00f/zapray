@@ -29,7 +29,12 @@ void SpriteBatcher::start_batch()
 
 void SpriteBatcher::add_sprite(const Tile *tile, const QuadVerts &verts, int depth)
 {
-    quads_.emplace_back(tile, verts, depth);
+    quads_.emplace_back(tile, verts, glm::vec4(0.0f), depth);
+}
+
+void SpriteBatcher::add_sprite(const Tile *tile, const QuadVerts &verts, const glm::vec4 &flat_color, int depth)
+{
+    quads_.emplace_back(tile, verts, flat_color, depth);
 }
 
 void SpriteBatcher::render_batch() const
@@ -57,7 +62,7 @@ void SpriteBatcher::render_batch() const
 
     int draw_calls = 0;
     const auto do_render = [&cur_texture, &data_start, &data, &draw_calls] {
-        const auto vertex_count = (data - data_start) / 4;
+        const auto vertex_count = (data - data_start) / 8;
         if (vertex_count)
         {
             cur_texture->bind();
@@ -83,12 +88,17 @@ void SpriteBatcher::render_batch() const
 
         const auto &verts = quad_ptr->verts;
         const auto &tex_coords = quad_ptr->tile->tex_coords;
+        const auto &flat_color = quad_ptr->flat_color;
 
-        const auto emit_vertex = [&data, &verts, &tex_coords](int index) {
+        const auto emit_vertex = [&data, &verts, &tex_coords, &flat_color](int index) {
             *data++ = verts[index].x;
             *data++ = verts[index].y;
             *data++ = tex_coords[index].x;
             *data++ = tex_coords[index].y;
+            *data++ = flat_color.r;
+            *data++ = flat_color.g;
+            *data++ = flat_color.b;
+            *data++ = flat_color.a;
         };
 
         emit_vertex(0); emit_vertex(1); emit_vertex(2);
@@ -121,6 +131,9 @@ void SpriteBatcher::initialize_gl_resources()
 
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, GLVertexSize, reinterpret_cast<GLvoid *>(2 * sizeof(GLfloat)));
+
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, GLVertexSize, reinterpret_cast<GLvoid *>(4 * sizeof(GLfloat)));
 
     glBindVertexArray(0);
 }

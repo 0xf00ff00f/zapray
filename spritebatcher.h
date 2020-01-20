@@ -23,6 +23,7 @@ public:
 
     void start_batch();
     void add_sprite(const Tile *tile, const QuadVerts &verts, int depth);
+    void add_sprite(const Tile *tile, const QuadVerts &verts, const glm::vec4 &flat_color, int depth);
     void render_batch() const;
 
 private:
@@ -33,16 +34,18 @@ private:
     {
         const Tile *tile;
         QuadVerts verts;
+        glm::vec4 flat_color;
         int depth;
 
-        Quad(const Tile *tile, const QuadVerts &verts, int depth)
+        Quad(const Tile *tile, const QuadVerts &verts, const glm::vec4 &flat_color, int depth)
             : tile(tile)
             , verts(verts)
+            , flat_color(flat_color)
             , depth(depth)
         { }
     };
 
-    static constexpr const int GLVertexSize = 2 * 2 * sizeof(GLfloat);
+    static constexpr const int GLVertexSize = (2 + 2 + 4) * sizeof(GLfloat);
     static constexpr const int MaxQuadsPerBatch = 1024;
 
     std::vector<Quad> quads_;
