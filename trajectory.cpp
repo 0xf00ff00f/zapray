@@ -5,7 +5,6 @@
 #include <glm/gtx/string_cast.hpp>
 
 #include <algorithm>
-#include <iostream>
 
 glm::vec2 PathSegment::eval(float t) const
 {
@@ -44,12 +43,6 @@ Trajectory::Trajectory(const Path &path)
     {
         const auto &pos = path.back().control_points[3];
         add_vertex(pos);
-    }
-
-    for (size_t i = 0; i < verts_.size(); ++i)
-    {
-        const auto &v = verts_[i];
-        std::cout << i << ": " << glm::to_string(v.position) << ' ' << v.distance << '\n';
     }
 }
 
