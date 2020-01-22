@@ -3,4 +3,4 @@
 #include <vector>
 #include <string>
 
-std::vector<char> load_file(const std::string &filename);
+std::vector<char> load_file(const std::string &path);

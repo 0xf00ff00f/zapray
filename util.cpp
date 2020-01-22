@@ -4,11 +4,11 @@
 
 #include <fstream>
 
-std::vector<char> load_file(const std::string &filename)
+std::vector<char> load_file(const std::string &path)
 {
-    std::ifstream file(filename);
+    std::ifstream file(path);
     if (!file.is_open())
-        panic("failed to open %s\n", std::string(filename).c_str());
+        panic("failed to open %s\n", std::string(path).c_str());
 
     auto *buf = file.rdbuf();
 

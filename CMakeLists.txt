@@ -14,6 +14,7 @@ add_executable(demo
     shaderprogram.cpp
     tilesheet.cpp
     spritebatcher.cpp
+    level.cpp
     util.cpp)
 
 target_link_libraries(demo ${CONAN_LIBS})
