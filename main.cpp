@@ -246,14 +246,14 @@ public:
     World(int window_width, int window_height);
 
     void initialize_level(const Level *level);
-    void advance(float dt);
+    void advance(unsigned dpad_state, float dt);
     void render();
 
 private:
-    void advance_one_tic();
+    void advance_one_tic(unsigned dpad_state);
     void advance_waves();
     void advance_foes();
-    void advance_player();
+    void advance_player(unsigned dpad_state);
     void advance_missiles();
     void spawn_missiles();
 
@@ -297,10 +297,6 @@ World::World(int width, int height)
     trajectory_program_.add_shader(GL_VERTEX_SHADER, "resources/shaders/dummy.vert");
     trajectory_program_.add_shader(GL_FRAGMENT_SHADER, "resources/shaders/dummy.frag");
     trajectory_program_.link();
-
-    const auto projection_matrix = glm::ortho(0.0f, static_cast<float>(width), static_cast<float>(height), 0.0f);
-    trajectory_program_.bind();
-    trajectory_program_.set_uniform(trajectory_program_.uniform_location("mvp"), projection_matrix);
 #endif
 }
 
@@ -326,7 +322,7 @@ void World::initialize_level(const Level *level)
 #endif
 }
 
-void World::advance(float dt)
+void World::advance(unsigned dpad_state, float dt)
 {
     timestamp_ += dt;
     constexpr auto MillisecondsPerTic = 1000.0f / TicsPerSecond;
@@ -335,7 +331,7 @@ void World::advance(float dt)
     {
         timestamp_ -= MillisecondsPerTic;
         ++cur_tic_;
-        advance_one_tic();
+        advance_one_tic(dpad_state);
     }
 }
 
@@ -343,6 +339,8 @@ void World::render()
 {
 #ifdef DRAW_ACTIVE_TRAJECTORIES
     trajectory_program_.bind();
+    trajectory_program_.set_uniform(trajectory_program_.uniform_location("mvp"), g_sprite_batcher->transform_matrix());
+
     for (const auto &wave : active_waves_)
     {
         wave->geometry.render(GL_LINE_STRIP);
@@ -362,8 +360,6 @@ void World::render()
     }
 #endif
 
-    g_sprite_batcher->start_batch();
-
     const auto *foe_tile = foe_sprite_.tile;
     for (const auto &foe : foes_)
     {
@@ -376,8 +372,6 @@ void World::render()
         draw_tile(missile_tile, missile.position, 0);
 
     draw_tile(player_.frames[player_.cur_frame], player_.position, 0);
-
-    g_sprite_batcher->render_batch();
 }
 
 World::ActiveWave::ActiveWave(const Wave *wave)
@@ -401,12 +395,12 @@ World::ActiveWave::ActiveWave(const Wave *wave)
 #endif
 }
 
-void World::advance_one_tic()
+void World::advance_one_tic(unsigned dpad_state)
 {
     advance_waves();
     advance_missiles();
     advance_foes();
-    advance_player();
+    advance_player(dpad_state);
 }
 
 void World::advance_waves()
@@ -471,20 +465,20 @@ void World::spawn_missiles()
     player_.fire_tics = MissileSpawnInterval;
 }
 
-void World::advance_player()
+void World::advance_player(unsigned dpad_state)
 {
     constexpr float speed = 2.0f;
     constexpr float Margin = 12;
 
-    if ((g_dpad_state & DPad_Up) && player_.position.y > Margin)
+    if ((dpad_state & DPad_Up) && player_.position.y > Margin)
         player_.position.y -= speed;
-    if ((g_dpad_state & DPad_Down) && player_.position.y < height_ - Margin)
+    if ((dpad_state & DPad_Down) && player_.position.y < height_ - Margin)
         player_.position.y += speed;
-    if ((g_dpad_state & DPad_Left) && player_.position.x > Margin)
+    if ((dpad_state & DPad_Left) && player_.position.x > Margin)
         player_.position.x -= speed;
-    if ((g_dpad_state & DPad_Right) && player_.position.x < width_ - Margin)
+    if ((dpad_state & DPad_Right) && player_.position.x < width_ - Margin)
         player_.position.x += speed;
-    if ((g_dpad_state & DPad_Button) && player_.fire_tics == 0)
+    if ((dpad_state & DPad_Button) && player_.fire_tics == 0)
         spawn_missiles();
 
     if (player_.fire_tics)
@@ -536,6 +530,62 @@ void World::advance_missiles()
     }
 }
 
+class Game
+{
+public:
+    Game(int window_width, int window_height);
+
+    void advance(float dt);
+    void render();
+
+private:
+    int window_width_;
+    int window_height_;
+    std::unique_ptr<Level> level_;
+    World local_;
+    World remote_;
+};
+
+Game::Game(int window_width, int window_height)
+    : window_width_(window_width)
+    , window_height_(window_height)
+    , level_(load_level("resources/levels/level-0.json"))
+    , local_(window_width / 2, window_height)
+    , remote_(window_width / 2, window_height)
+{
+    local_.initialize_level(level_.get());
+    remote_.initialize_level(level_.get());
+}
+
+void Game::advance(float dt)
+{
+    local_.advance(g_dpad_state, dt);
+    remote_.advance(0, dt);
+}
+
+void Game::render()
+{
+    const auto project =
+        glm::ortho(0.0f, static_cast<float>(window_width_), static_cast<float>(window_height_), 0.0f);
+
+    glEnable(GL_SCISSOR_TEST);
+
+    glScissor(0, 0, window_width_ / 2, window_height_);
+    g_sprite_batcher->set_transform_matrix(project);
+    g_sprite_batcher->start_batch();
+    local_.render();
+    g_sprite_batcher->render_batch();
+
+    glScissor(window_width_ / 2, 0, window_width_ / 2, window_height_);
+    const auto translate = glm::translate(glm::mat4(1.0f), glm::vec3(0.5f * window_width_, 0.0f, 0.0f));
+    g_sprite_batcher->set_transform_matrix(project * translate);
+    g_sprite_batcher->start_batch();
+    remote_.render();
+    g_sprite_batcher->render_batch();
+
+    glDisable(GL_SCISSOR_TEST);
+}
+
 static void update_dpad_state(GLFWwindow *window)
 {
     unsigned state = 0;
@@ -554,7 +604,7 @@ static void update_dpad_state(GLFWwindow *window)
 
 int main()
 {
-    constexpr auto window_width = 400;
+    constexpr auto window_width = 800;
     constexpr auto window_height = 600;
 
     if (!glfwInit())
@@ -587,15 +637,10 @@ int main()
 
     {
         g_sprite_sheet = load_tilesheet("resources/tilesheets/sheet.json");
-
         g_sprite_batcher = new SpriteBatcher;
-        g_sprite_batcher->set_view_rectangle(0, window_width, window_height, 0);
 
         {
-            auto level = load_level("resources/levels/level-0.json");
-
-            World world(window_width, window_height);
-            world.initialize_level(level.get());
+            Game game(window_width, window_height);
 
             while (!glfwWindowShouldClose(window))
             {
@@ -604,8 +649,8 @@ int main()
                 glClearColor(0, 0, 0, 0);
                 glClear(GL_COLOR_BUFFER_BIT);
 
-                world.advance(1000.f / 60.f);
-                world.render();
+                game.advance(1000.f / 60.f);
+                game.render();
 
                 glfwSwapBuffers(window);
                 glfwPollEvents();

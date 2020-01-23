@@ -17,9 +17,14 @@ SpriteBatcher::~SpriteBatcher()
     release_gl_resources();
 }
 
-void SpriteBatcher::set_view_rectangle(float left, float right, float bottom, float top)
+void SpriteBatcher::set_transform_matrix(const glm::mat4 &matrix)
 {
-    projection_matrix_ = glm::ortho(left, right, bottom, top);
+    transform_matrix_ = matrix;
+}
+
+glm::mat4 SpriteBatcher::transform_matrix() const
+{
+    return transform_matrix_;
 }
 
 void SpriteBatcher::start_batch()
@@ -54,7 +59,7 @@ void SpriteBatcher::render_batch() const
     glBindVertexArray(vao_); // XXX do we need to bind the buffer after doing this?
 
     program_.bind();
-    program_.set_uniform(program_.uniform_location("mvp"), projection_matrix_);
+    program_.set_uniform(program_.uniform_location("mvp"), transform_matrix_);
     program_.set_uniform(program_.uniform_location("sprite_texture"), 0);
 
     const Texture *cur_texture = nullptr;

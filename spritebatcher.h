@@ -19,7 +19,8 @@ public:
     SpriteBatcher();
     ~SpriteBatcher();
 
-    void set_view_rectangle(float left, float right, float bottom, float top);
+    void set_transform_matrix(const glm::mat4 &matrix);
+    glm::mat4 transform_matrix() const;
 
     void start_batch();
     void add_sprite(const Tile *tile, const QuadVerts &verts, int depth);
@@ -52,5 +53,5 @@ private:
     GLuint vao_;
     GLuint vbo_;
     ShaderProgram program_;
-    glm::mat4 projection_matrix_;
+    glm::mat4 transform_matrix_;
 };
