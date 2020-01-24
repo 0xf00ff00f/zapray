@@ -27,6 +27,7 @@
 
 #define DRAW_ACTIVE_TRAJECTORIES
 #define DRAW_COLLISIONS
+#define DRAW_FRAMES
 
 std::unique_ptr<TileSheet> g_sprite_sheet;
 SpriteBatcher *g_sprite_batcher;
@@ -247,7 +248,7 @@ public:
 
     void initialize_level(const Level *level);
     void advance(unsigned dpad_state, float dt);
-    void render();
+    void render() const;
 
 private:
     void advance_one_tic(unsigned dpad_state);
@@ -335,7 +336,7 @@ void World::advance(unsigned dpad_state, float dt)
     }
 }
 
-void World::render()
+void World::render() const
 {
 #ifdef DRAW_ACTIVE_TRAJECTORIES
     trajectory_program_.bind();
@@ -530,13 +531,21 @@ void World::advance_missiles()
     }
 }
 
+static constexpr auto ViewportWidth = 400;
+static constexpr auto ViewportHeight = 600;
+
+static constexpr auto ViewportMargin = 12;
+
+static constexpr auto WindowWidth = 2 * ViewportWidth + 3 * ViewportMargin;
+static constexpr auto WindowHeight = ViewportHeight + 2 * ViewportMargin;
+
 class Game
 {
 public:
-    Game(int window_width, int window_height);
+    Game();
 
     void advance(float dt);
-    void render();
+    void render() const;
 
 private:
     int window_width_;
@@ -544,17 +553,34 @@ private:
     std::unique_ptr<Level> level_;
     World local_;
     World remote_;
+#ifdef DRAW_FRAMES
+    ShaderProgram frame_program_;
+    Geometry<std::tuple<glm::vec2>> frame_;
+#endif
 };
 
-Game::Game(int window_width, int window_height)
-    : window_width_(window_width)
-    , window_height_(window_height)
-    , level_(load_level("resources/levels/level-0.json"))
-    , local_(window_width / 2, window_height)
-    , remote_(window_width / 2, window_height)
+Game::Game()
+    : level_(load_level("resources/levels/level-0.json"))
+    , local_(ViewportWidth, ViewportHeight)
+    , remote_(ViewportWidth, ViewportHeight)
 {
     local_.initialize_level(level_.get());
     remote_.initialize_level(level_.get());
+
+#ifdef DRAW_FRAMES
+    constexpr float x0 = 0;
+    constexpr float x1 = ViewportWidth;
+    constexpr float y0 = 0;
+    constexpr float y1 = ViewportHeight;
+
+    static const std::vector<std::tuple<glm::vec2>> frame_verts =
+        {{{x0, y0}}, {{x1, y0}}, {{x1, y1}}, {{x0, y1}}};
+    frame_.set_data(frame_verts);
+
+    frame_program_.add_shader(GL_VERTEX_SHADER, "resources/shaders/dummy.vert");
+    frame_program_.add_shader(GL_FRAGMENT_SHADER, "resources/shaders/dummy.frag");
+    frame_program_.link();
+#endif
 }
 
 void Game::advance(float dt)
@@ -563,25 +589,38 @@ void Game::advance(float dt)
     remote_.advance(0, dt);
 }
 
-void Game::render()
+void Game::render() const
 {
     const auto project =
-        glm::ortho(0.0f, static_cast<float>(window_width_), static_cast<float>(window_height_), 0.0f);
+        glm::ortho(0.0f, static_cast<float>(WindowWidth), static_cast<float>(WindowHeight), 0.0f);
 
     glEnable(GL_SCISSOR_TEST);
 
-    glScissor(0, 0, window_width_ / 2, window_height_);
-    g_sprite_batcher->set_transform_matrix(project);
-    g_sprite_batcher->start_batch();
-    local_.render();
-    g_sprite_batcher->render_batch();
+    const auto draw_viewport = [this, &project](const World &world, int x_offset) {
+        const auto translate
+            = glm::translate(glm::mat4(1.0f), glm::vec3(x_offset, ViewportMargin, 0.0f));
 
-    glScissor(window_width_ / 2, 0, window_width_ / 2, window_height_);
-    const auto translate = glm::translate(glm::mat4(1.0f), glm::vec3(0.5f * window_width_, 0.0f, 0.0f));
-    g_sprite_batcher->set_transform_matrix(project * translate);
-    g_sprite_batcher->start_batch();
-    remote_.render();
-    g_sprite_batcher->render_batch();
+        glScissor(x_offset, ViewportMargin, ViewportWidth, ViewportHeight);
+
+        g_sprite_batcher->set_transform_matrix(project * translate);
+        g_sprite_batcher->start_batch();
+        world.render();
+        g_sprite_batcher->render_batch();
+
+#ifdef DRAW_FRAMES
+        glDisable(GL_SCISSOR_TEST);
+
+        const auto mvp = frame_program_.uniform_location("mvp");
+        frame_program_.bind();
+        frame_program_.set_uniform(mvp, project * translate);
+        frame_.render(GL_LINE_LOOP);
+
+        glEnable(GL_SCISSOR_TEST);
+#endif
+    };
+
+    draw_viewport(local_, ViewportMargin);
+    draw_viewport(remote_, 2 * ViewportMargin + ViewportWidth);
 
     glDisable(GL_SCISSOR_TEST);
 }
@@ -604,9 +643,6 @@ static void update_dpad_state(GLFWwindow *window)
 
 int main()
 {
-    constexpr auto window_width = 800;
-    constexpr auto window_height = 600;
-
     if (!glfwInit())
         panic("glfwInit failed\n");
 
@@ -616,7 +652,7 @@ int main()
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_SAMPLES, 16);
-    auto *window = glfwCreateWindow(window_width, window_height, "demo", nullptr, nullptr);
+    auto *window = glfwCreateWindow(WindowWidth, WindowHeight, "demo", nullptr, nullptr);
     if (!window)
         panic("glfwCreateWindow failed\n");
 
@@ -630,7 +666,7 @@ int main()
             glfwSetWindowShouldClose(window, GL_TRUE);
     });
 
-    glViewport(0, 0, window_width, window_height);
+    glViewport(0, 0, WindowWidth, WindowHeight);
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -640,7 +676,7 @@ int main()
         g_sprite_batcher = new SpriteBatcher;
 
         {
-            Game game(window_width, window_height);
+            Game game;
 
             while (!glfwWindowShouldClose(window))
             {
