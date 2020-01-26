@@ -225,7 +225,8 @@ public:
     enum class NetworkMode
     {
         Client,
-        Server
+        Server,
+        Single
     };
 
     Game(NetworkMode mode, const std::string &host);
@@ -236,8 +237,7 @@ public:
 private:
     void advance_one_tic();
 
-    int window_width_;
-    int window_height_;
+    NetworkMode mode_;
     std::unique_ptr<Level> level_;
     World local_;
     World remote_;
@@ -250,7 +250,8 @@ private:
 };
 
 Game::Game(NetworkMode mode, const std::string &host)
-    : level_(load_level("resources/levels/level-0.json"))
+    : mode_(mode)
+    , level_(load_level("resources/levels/level-0.json"))
     , local_(ViewportWidth, ViewportHeight)
     , remote_(ViewportWidth, ViewportHeight)
 {
@@ -272,21 +273,27 @@ Game::Game(NetworkMode mode, const std::string &host)
     frame_program_.link();
 #endif
 
-    if (mode == NetworkMode::Server)
-        network_thread_.reset(new ServerNetworkThread(ServerPort));
-    else
-        network_thread_.reset(new ClientNetworkThread(host, std::to_string(ServerPort)));
-    network_thread_->start();
+    if (mode_ != NetworkMode::Single)
+    {
+        if (mode == NetworkMode::Server)
+            network_thread_.reset(new ServerNetworkThread(ServerPort));
+        else
+            network_thread_.reset(new ClientNetworkThread(host, std::to_string(ServerPort)));
+        network_thread_->start();
+    }
 }
 
 bool Game::advance(float dt)
 {
-    const auto status = network_thread_->status();
-    if (status == NetworkThread::Status::Disconnected)
-        return false;
+    if (mode_ != NetworkMode::Single)
+    {
+        const auto status = network_thread_->status();
+        if (status == NetworkThread::Status::Disconnected)
+            return false;
 
-    if (status == NetworkThread::Status::Connecting)
-        return true;
+        if (status == NetworkThread::Status::Connecting)
+            return true;
+    }
 
     timestamp_ += dt;
     while (timestamp_ > MillisecondsPerTic)
@@ -300,10 +307,11 @@ bool Game::advance(float dt)
 
 void Game::advance_one_tic()
 {
-    network_thread_->write_message(g_dpad_state);
+    if (mode_ != NetworkMode::Single)
+        network_thread_->write_message(g_dpad_state);
     local_.advance(g_dpad_state);
 
-    const auto remote_dpad_state = network_thread_->read_remote_message();
+    const auto remote_dpad_state = mode_ != NetworkMode::Single ? network_thread_->read_remote_message() : 0;
     remote_.advance(remote_dpad_state);
 }
 
@@ -340,7 +348,7 @@ void Game::render() const
     draw_viewport(local_, ViewportMargin);
     draw_viewport(remote_, 2 * ViewportMargin + ViewportWidth);
 
-    if (network_thread_->status() == NetworkThread::Status::Connecting)
+    if (mode_ == NetworkMode::Single || network_thread_->status() == NetworkThread::Status::Connecting)
     {
         const auto translate
             = glm::translate(glm::mat4(1.0f),
@@ -370,15 +378,21 @@ static void update_dpad_state(GLFWwindow *window)
 int main(int argc, char *argv[])
 {
     std::string host;
-    Game::NetworkMode mode;
-    if (argc == 1)
+    Game::NetworkMode mode = Game::NetworkMode::Single;
+
+    int c;
+    while ((c = getopt(argc, argv, "sc:")) != EOF)
     {
-        mode = Game::NetworkMode::Server;
-    }
-    else
-    {
-        mode = Game::NetworkMode::Client;
-        host = argv[1];
+        switch (c)
+        {
+            case 's':
+                mode = Game::NetworkMode::Server;
+                break;
+
+            case 'c':
+                mode = Game::NetworkMode::Client;
+                host = optarg;
+        }
     }
 
     if (!glfwInit())
