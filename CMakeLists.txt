@@ -15,6 +15,7 @@ add_executable(demo
     tilesheet.cpp
     collisionmask.cpp
     spritebatcher.cpp
+    font.cpp
     level.cpp
     world.cpp
     fileutil.cpp)

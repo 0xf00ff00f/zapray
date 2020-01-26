@@ -9,6 +9,7 @@
 #include "tilesheet.h"
 #include "dpadstate.h"
 #include "world.h"
+#include "font.h"
 
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
@@ -135,6 +136,12 @@ void Game::render() const
 
     draw_viewport(local_, ViewportMargin);
     draw_viewport(remote_, 2 * ViewportMargin + ViewportWidth);
+
+    {
+        const auto translate
+            = glm::translate(glm::mat4(1.0f), glm::vec3(2 * ViewportMargin + ViewportWidth, ViewportMargin, 0.0f));
+        render_text(project * translate, 0.5f * ViewportWidth, 0.5f * ViewportHeight, "WAITING FOR PLAYER");
+    }
 
     glDisable(GL_SCISSOR_TEST);
 }
