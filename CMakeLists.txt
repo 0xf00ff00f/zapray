@@ -13,6 +13,7 @@ add_executable(demo
     texture.cpp
     shaderprogram.cpp
     tilesheet.cpp
+    collisionmask.cpp
     spritebatcher.cpp
     level.cpp
     util.cpp)

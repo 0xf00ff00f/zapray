@@ -8,6 +8,7 @@
 #include "trajectory.h"
 #include "level.h"
 #include "tilesheet.h"
+#include "collisionmask.h"
 
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
@@ -113,127 +114,7 @@ struct Missile
     glm::vec2 position;
 };
 
-struct Sprite
-{
-public:
-    Sprite(const Tile *tile);
-
-    const Tile *tile;
-
-    bool collides_with(const Sprite &other, const glm::vec2 &pos) const;
-
-private:
-    void initialize_mask();
-
-    using Word = uint64_t;
-    static constexpr const auto BitsPerWord = 8 * sizeof(Word);
-    using Bitmask = std::vector<Word>;
-
-    bool test_bitmasks(const Bitmask &mask0, const Bitmask &mask1, int offset) const;
-
-    std::vector<Bitmask> masks_;
-};
-
-Sprite::Sprite(const Tile *tile)
-    : tile(tile)
-{
-    initialize_mask();
-}
-
-bool Sprite::collides_with(const Sprite &other, const glm::vec2 &pos) const
-{
-    const auto cols = tile->size.x;
-    const auto rows = tile->size.y;
-
-    const auto other_cols = other.tile->size.x;
-    const auto other_rows = other.tile->size.y;
-
-    const auto row_offset = static_cast<int>(pos.y);
-    const auto col_offset = static_cast<int>(pos.x);
-
-    if (col_offset >= cols || col_offset < -other_cols)
-        return false;
-
-    if (row_offset >= rows || row_offset < -other_rows)
-        return false;
-
-    assert(masks_.size() == rows);
-
-    const int start_row = std::max(0, row_offset);
-    const int end_row = std::min(rows, row_offset + other_rows);
-
-    for (int row = start_row; row < end_row; ++row)
-    {
-        const auto other_row = row - row_offset;
-        assert(other_row >= 0 && other_row < other_rows);
-
-        const auto &mask = masks_[row];
-        const auto &other_mask = other.masks_[other_row];
-
-        if (col_offset >= 0)
-        {
-            if (test_bitmasks(mask, other_mask, col_offset))
-                return true;
-        }
-        else
-        {
-            if (test_bitmasks(other_mask, mask, -col_offset))
-                return true;
-        }
-    }
-
-    return false;
-}
-
-bool Sprite::test_bitmasks(const Bitmask &mask0, const Bitmask &mask1, int shift) const
-{
-    const auto word_offset = shift / BitsPerWord;
-    const auto word_shift = shift % BitsPerWord;
-
-    for (int i = 0, j = word_offset; i < mask1.size() && j < mask0.size(); ++i, ++j)
-    {
-        const auto w0 = mask1[i];
-
-        auto w1 = mask0[j] << word_shift;
-        if (j + 1 < mask0.size())
-            w1 |= (mask0[j + 1] >> (BitsPerWord - word_shift));
-
-        if (w0 & w1)
-            return true;
-    }
-
-    return false;
-}
-
-void Sprite::initialize_mask()
-{
-    const auto *pm = tile->texture->pixmap();
-    assert(pm->type == Pixmap::PixelType::RGBAlpha); // XXX for now
-
-    const auto *pixels = reinterpret_cast<const uint32_t *>(pm->pixels.data());
-
-    masks_.reserve(tile->size.y);
-
-    for (int i = 0; i < tile->size.y; ++i)
-    {
-        const auto mask_words = (tile->size.x + BitsPerWord - 1) / BitsPerWord;
-
-        Bitmask mask(mask_words, 0);
-
-        for (int j = 0; j < tile->size.x; ++j)
-        {
-            const uint32_t pixel = pixels[(i + tile->position.y) * pm->width + j + tile->position.x];
-            if ((pixel >> 24) > 0x7f)
-            {
-                mask[j / BitsPerWord] |= (1ul << (BitsPerWord - 1 - (j % BitsPerWord)));
-            }
-        }
-
-        masks_.push_back(std::move(mask));
-    }
-}
-
-static bool test_collision(const Sprite &sprite1, const glm::vec2 &pos1, const Sprite &sprite2, const glm::vec2 &pos2)
+static bool test_collision(const CollisionMask &sprite1, const glm::vec2 &pos1, const CollisionMask &sprite2, const glm::vec2 &pos2)
 {
     const auto pos = (1.0f / SpriteScale) * (tile_top_left(sprite1.tile, pos1) - tile_top_left(sprite2.tile, pos2));
     return sprite2.collides_with(sprite1, pos);
@@ -275,9 +156,9 @@ private:
     std::vector<Foe> foes_;
     std::vector<Missile> missiles_;
     Player player_;
-    Sprite player_sprite_; // XXX for now
-    Sprite foe_sprite_; // XXX for now
-    Sprite missile_sprite_; // XXX for now
+    CollisionMask player_sprite_; // XXX for now
+    CollisionMask foe_sprite_; // XXX for now
+    CollisionMask missile_sprite_; // XXX for now
     float timestamp_ = 0.0f; // milliseconds
     int cur_tic_ = 0;
 #ifdef DRAW_ACTIVE_TRAJECTORIES
