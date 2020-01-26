@@ -8,8 +8,17 @@
 
 #include <algorithm>
 #include <cassert>
+#include <unordered_map>
 
-static glm::ivec2 parse_ivec2(const rapidjson::Value &value)
+namespace
+{
+struct TileSheet
+{
+    std::vector<std::unique_ptr<Texture>> textures;
+    std::vector<std::unique_ptr<Tile>> tiles;
+};
+
+glm::ivec2 parse_ivec2(const rapidjson::Value &value)
 {
     assert(value.IsArray());
     const auto array = value.GetArray();
@@ -17,7 +26,7 @@ static glm::ivec2 parse_ivec2(const rapidjson::Value &value)
     return {array[0].GetInt(), array[1].GetInt()};
 }
 
-static std::unique_ptr<Tile> parse_tile(const rapidjson::Value &value, const std::vector<std::unique_ptr<Texture>> &textures)
+std::unique_ptr<Tile> parse_tile(const rapidjson::Value &value, const std::vector<std::unique_ptr<Texture>> &textures)
 {
     auto tile = std::make_unique<Tile>();
     tile->name = value["name"].GetString();
@@ -72,10 +81,54 @@ std::unique_ptr<TileSheet> load_tilesheet(const std::string &filename)
     return sheet;
 }
 
-const Tile *TileSheet::find_tile(std::string_view name) const
+struct TileMap
 {
-    auto it = std::find_if(tiles.begin(), tiles.end(), [name](const auto &tile) {
-        return tile->name == name;
-    });
-    return it != tiles.end() ? it->get() : nullptr;
+    std::vector<std::unique_ptr<TileSheet>> sheets;
+    std::unordered_map<std::string, const Tile *> tiles;
+
+    void cache_sheet(const std::string &path);
+    void release_sheets();
+    const Tile *get_tile(const std::string &name) const;
+};
+
+TileMap &get_tile_map()
+{
+    static TileMap tile_map;
+    return tile_map;
+}
+
+void TileMap::cache_sheet(const std::string &path)
+{
+    auto sheet = load_tilesheet(path);
+    for (const auto &tile : sheet->tiles)
+        tiles[tile->name] = tile.get();
+    sheets.push_back(std::move(sheet));
+}
+
+void TileMap::release_sheets()
+{
+    sheets.clear();
+    tiles.clear();
+}
+
+const Tile *TileMap::get_tile(const std::string &name) const
+{
+    auto it = tiles.find(name);
+    return it != tiles.end() ? it->second : nullptr;
+}
+}
+
+void cache_tilesheet(const std::string &path)
+{
+    get_tile_map().cache_sheet(path);
+}
+
+void release_tilesheets()
+{
+    get_tile_map().release_sheets();
+}
+
+const Tile *get_tile(const std::string &name)
+{
+    return get_tile_map().get_tile(name);
 }

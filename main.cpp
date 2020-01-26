@@ -28,7 +28,6 @@
 
 #define DRAW_FRAMES
 
-std::unique_ptr<TileSheet> g_sprite_sheet;
 SpriteBatcher *g_sprite_batcher;
 unsigned g_dpad_state = 0;
 
@@ -187,7 +186,7 @@ int main()
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     {
-        g_sprite_sheet = load_tilesheet("resources/tilesheets/sheet.json");
+        cache_tilesheet("resources/tilesheets/sheet.json");
         g_sprite_batcher = new SpriteBatcher;
 
         {
@@ -209,7 +208,7 @@ int main()
         }
 
         delete g_sprite_batcher;
-        g_sprite_sheet.reset();
+        release_tilesheets();
     }
 
     glfwDestroyWindow(window);

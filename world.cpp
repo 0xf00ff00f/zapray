@@ -11,8 +11,7 @@
 
 #define DRAW_COLLISIONS
 
-extern std::unique_ptr<TileSheet> g_sprite_sheet; // XXX
-extern SpriteBatcher *g_sprite_batcher;
+extern SpriteBatcher *g_sprite_batcher; // XXX
 
 static constexpr const auto SpriteScale = 2.0f;
 static constexpr const auto MissileSpawnInterval = 8;
@@ -51,7 +50,7 @@ Player::Player()
 {
     const auto frame_tiles = {"player-0.png", "player-1.png", "player-2.png", "player-3.png"};
     for (const auto tile : frame_tiles)
-        frames.push_back(g_sprite_sheet->find_tile(tile));
+        frames.push_back(get_tile(tile));
 }
 
 Foe::Foe(const Wave *wave)
@@ -65,9 +64,9 @@ Foe::Foe(const Wave *wave)
 World::World(int width, int height)
     : width_(width)
     , height_(height)
-    , player_sprite_(g_sprite_sheet->find_tile("player-0.png"))
-    , foe_sprite_(g_sprite_sheet->find_tile("foe-small.png"))
-    , missile_sprite_(g_sprite_sheet->find_tile("missile.png"))
+    , player_sprite_(get_tile("player-0.png"))
+    , foe_sprite_(get_tile("foe-small.png"))
+    , missile_sprite_(get_tile("missile.png"))
 {
     player_.position = glm::vec2(0.5f * width, 0.5f * height);
 

@@ -19,12 +19,7 @@ struct Tile
     const Texture *texture;
 };
 
-struct TileSheet
-{
-    std::vector<std::unique_ptr<Texture>> textures;
-    std::vector<std::unique_ptr<Tile>> tiles;
+void cache_tilesheet(const std::string &path);
+void release_tilesheets();
 
-    const Tile *find_tile(std::string_view name) const;
-};
-
-std::unique_ptr<TileSheet> load_tilesheet(const std::string &path);
+const Tile *get_tile(const std::string &name);
