@@ -183,22 +183,10 @@ void World::advance_waves()
     auto it = active_waves_.begin();
     while (it != active_waves_.end())
     {
-        const auto *wave = (*it)->wave;
-        bool erase = false;
-        const auto wave_tic = cur_tic_ - wave->start_tic;
-        if (wave_tic % wave->spawn_interval == 0)
-        {
-            foes_.emplace_back(wave);
-            erase = (wave_tic == wave->spawn_interval * (wave->spawn_count - 1));
-        }
-        if (erase)
-        {
+        if (!advance_active_wave(**it))
             it = active_waves_.erase(it);
-        }
         else
-        {
             ++it;
-        }
     }
 }
 
@@ -207,26 +195,10 @@ void World::advance_foes()
     auto it = foes_.begin();
     while (it != foes_.end())
     {
-        auto &foe = *it;
-
-        ++foe.cur_tic;
-
-        foe.trajectory_position += foe.speed;
-
-        const auto &foe_class = g_foe_classes[foe.type];
-        foe.cur_frame = (foe.cur_tic / foe_class.tics_per_frame) % foe_class.frames.size();
-
-        if (foe.trajectory_position > foe.trajectory->length())
-        {
+        if (!advance_foe(*it))
             it = foes_.erase(it);
-        }
         else
-        {
-            foe.position = foe.trajectory->point_at(foe.trajectory_position);
-            if (foe.damage_tics > 0)
-                --foe.damage_tics;
             ++it;
-        }
     }
 }
 
@@ -263,43 +235,70 @@ void World::advance_player(unsigned dpad_state)
 
 void World::advance_missiles()
 {
-    constexpr float speed = 18.0f;
-
-    const auto *missile_tile = missile_sprite_.tile;
-
-    const auto &missile_size = missile_tile->size;
-    const float min_y = -SpriteScale * 0.5f * missile_size.y;
-
     auto it = missiles_.begin();
     while (it != missiles_.end())
     {
-        auto &missile = *it;
-        missile.position += glm::vec2(0.f, -speed);
-
-        bool erase_missile = false;
-        if (missile.position.y < min_y)
-        {
-            erase_missile = true;
-        }
-        else
-        {
-            for (auto &foe : foes_)
-            {
-                const auto &frame = g_foe_classes[foe.type].frames[foe.cur_frame];
-                if (test_collision(missile_sprite_, missile.position, frame.collision_mask, foe.position))
-                {
-                    erase_missile = true;
-                    foe.damage_tics = DamageFlashInterval;
-                }
-            }
-        }
-        if (erase_missile)
-        {
+        if (!advance_missile(*it))
             it = missiles_.erase(it);
-        }
         else
-        {
             ++it;
+    }
+}
+
+bool World::advance_active_wave(ActiveWave &active_wave)
+{
+    const auto *wave = active_wave.wave;
+
+    const auto wave_tic = cur_tic_ - wave->start_tic;
+    if (wave_tic % wave->spawn_interval == 0)
+    {
+        foes_.emplace_back(wave);
+        if (wave_tic == wave->spawn_interval * (wave->spawn_count - 1))
+            return false;
+    }
+
+    return true;
+}
+
+bool World::advance_foe(Foe &foe)
+{
+    ++foe.cur_tic;
+
+    const auto &foe_class = g_foe_classes[foe.type];
+    foe.cur_frame = (foe.cur_tic / foe_class.tics_per_frame) % foe_class.frames.size();
+
+    foe.trajectory_position += foe.speed;
+    if (foe.trajectory_position > foe.trajectory->length())
+        return false;
+
+    foe.position = foe.trajectory->point_at(foe.trajectory_position);
+
+    if (foe.damage_tics > 0)
+        --foe.damage_tics;
+
+    return true;
+}
+
+bool World::advance_missile(Missile &missile)
+{
+    constexpr const auto Speed = 18.0f;
+    missile.position += glm::vec2(0.f, -Speed);
+
+    const auto *missile_tile = missile_sprite_.tile;
+    const auto &missile_size = missile_tile->size;
+    const float min_y = -SpriteScale * 0.5f * missile_size.y;
+    if (missile.position.y < min_y)
+        return false;
+
+    for (auto &foe : foes_)
+    {
+        const auto &frame = g_foe_classes[foe.type].frames[foe.cur_frame];
+        if (test_collision(missile_sprite_, missile.position, frame.collision_mask, foe.position))
+        {
+            foe.damage_tics = DamageFlashInterval;
+            return false;
         }
     }
+
+    return true;
 }

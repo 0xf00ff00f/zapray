@@ -62,8 +62,6 @@ private:
     void advance_missiles();
     void spawn_missiles();
 
-    const Level *cur_level_ = nullptr;
-
     struct ActiveWave
     {
         ActiveWave(const Wave *wave);
@@ -73,6 +71,11 @@ private:
 #endif
     };
 
+    bool advance_active_wave(ActiveWave &wave);
+    bool advance_foe(Foe &foe);
+    bool advance_missile(Missile &missile);
+
+    const Level *cur_level_ = nullptr;
     int width_;
     int height_;
     std::vector<std::unique_ptr<ActiveWave>> active_waves_;
