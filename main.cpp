@@ -10,6 +10,7 @@
 #include "dpadstate.h"
 #include "world.h"
 #include "font.h"
+#include "foeclass.h"
 
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
@@ -37,6 +38,7 @@
 
 SpriteBatcher *g_sprite_batcher;
 unsigned g_dpad_state = 0;
+std::vector<FoeClass> g_foe_classes;
 
 static constexpr const auto ViewportWidth = 400;
 static constexpr const auto ViewportHeight = 600;
@@ -48,6 +50,33 @@ static constexpr const auto TicsPerSecond = 60;
 static constexpr const auto MillisecondsPerTic = 1000.0f / TicsPerSecond;
 
 static constexpr auto ServerPort = 4141;
+
+static void initialize_foe_classes()
+{
+    struct FoeInfo
+    {
+        std::vector<std::string> frames;
+        int tics_per_frame;
+    };
+    static const std::vector<FoeInfo> foes = {
+        {{ "small-foe-0.png", "small-foe-1.png", "small-foe-2.png", "small-foe-3.png" }, 4},
+        {{ "cube-foe-0.png", "cube-foe-1.png", "cube-foe-2.png", "cube-foe-3.png" }, 4},
+    };
+
+    g_foe_classes.reserve(foes.size());
+    for (const auto &foe : foes)
+    {
+        FoeClass foe_class;
+        for (const auto &tile_name : foe.frames)
+        {
+            const auto *tile = get_tile(tile_name);
+            assert(tile);
+            foe_class.frames.push_back({tile, CollisionMask(tile)});
+        }
+        foe_class.tics_per_frame = foe.tics_per_frame;
+        g_foe_classes.push_back(foe_class);
+    }
+}
 
 template <typename T>
 class Queue
@@ -425,6 +454,9 @@ int main(int argc, char *argv[])
 
     {
         cache_tilesheet("resources/tilesheets/sheet.json");
+
+        initialize_foe_classes();
+
         g_sprite_batcher = new SpriteBatcher;
 
         {

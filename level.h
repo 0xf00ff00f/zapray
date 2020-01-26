@@ -7,6 +7,7 @@ class Trajectory;
 
 struct Wave
 {
+    int foe_type;
     int start_tic;
     int spawn_interval;
     int spawn_count;

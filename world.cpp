@@ -4,6 +4,7 @@
 #include "trajectory.h"
 #include "level.h"
 #include "spritebatcher.h"
+#include "foeclass.h"
 #include "dpadstate.h"
 
 #include <glm/vec4.hpp>
@@ -12,6 +13,7 @@
 #define DRAW_COLLISIONS
 
 extern SpriteBatcher *g_sprite_batcher; // XXX
+extern std::vector<FoeClass> g_foe_classes; // XXX
 
 static constexpr const auto SpriteScale = 2.0f;
 static constexpr const auto MissileSpawnInterval = 8;
@@ -54,7 +56,8 @@ Player::Player()
 }
 
 Foe::Foe(const Wave *wave)
-    : speed(wave->foe_speed)
+    : type(wave->foe_type)
+    , speed(wave->foe_speed)
     , trajectory(wave->trajectory)
     , position(trajectory->point_at(0.0f))
     , trajectory_position(0.0f)
@@ -65,7 +68,6 @@ World::World(int width, int height)
     : width_(width)
     , height_(height)
     , player_sprite_(get_tile("player-0.png"))
-    , foe_sprite_(get_tile("foe-small.png"))
     , missile_sprite_(get_tile("missile.png"))
 {
     player_.position = glm::vec2(0.5f * width, 0.5f * height);
@@ -113,7 +115,8 @@ void World::render() const
 #ifdef DRAW_COLLISIONS
     {
         bool has_collisions = std::any_of(foes_.begin(), foes_.end(), [this](const Foe &foe) {
-            return test_collision(foe_sprite_, foe.position, player_sprite_, player_.position);
+            const auto &frame = g_foe_classes[foe.type].frames[foe.cur_frame];
+            return test_collision(frame.collision_mask, foe.position, player_sprite_, player_.position);
         });
         if (has_collisions)
         {
@@ -123,11 +126,11 @@ void World::render() const
     }
 #endif
 
-    const auto *foe_tile = foe_sprite_.tile;
     for (const auto &foe : foes_)
     {
+        const auto &frame = g_foe_classes[foe.type].frames[foe.cur_frame];
         const auto a = static_cast<float>(foe.damage_tics) / DamageFlashInterval;
-        draw_tile(foe_tile, foe.position, glm::vec4(1.0f, 0.0f, 0.0f, a), 0);
+        draw_tile(frame.tile, foe.position, glm::vec4(1.0f, 0.0f, 0.0f, a), 0);
     }
 
     const auto *missile_tile = missile_sprite_.tile;
@@ -205,7 +208,14 @@ void World::advance_foes()
     while (it != foes_.end())
     {
         auto &foe = *it;
+
+        ++foe.cur_tic;
+
         foe.trajectory_position += foe.speed;
+
+        const auto &foe_class = g_foe_classes[foe.type];
+        foe.cur_frame = (foe.cur_tic / foe_class.tics_per_frame) % foe_class.frames.size();
+
         if (foe.trajectory_position > foe.trajectory->length())
         {
             it = foes_.erase(it);
@@ -256,7 +266,6 @@ void World::advance_missiles()
     constexpr float speed = 18.0f;
 
     const auto *missile_tile = missile_sprite_.tile;
-    const auto *foe_tile = foe_sprite_.tile;
 
     const auto &missile_size = missile_tile->size;
     const float min_y = -SpriteScale * 0.5f * missile_size.y;
@@ -276,7 +285,8 @@ void World::advance_missiles()
         {
             for (auto &foe : foes_)
             {
-                if (test_collision(missile_sprite_, missile.position, foe_sprite_, foe.position))
+                const auto &frame = g_foe_classes[foe.type].frames[foe.cur_frame];
+                if (test_collision(missile_sprite_, missile.position, frame.collision_mask, foe.position))
                 {
                     erase_missile = true;
                     foe.damage_tics = DamageFlashInterval;

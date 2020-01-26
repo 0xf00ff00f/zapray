@@ -59,6 +59,7 @@ std::unique_ptr<Level> load_level(const std::string &path)
         assert(value.IsObject());
 
         auto wave = std::make_unique<Wave>();
+        wave->foe_type = value["foe_type"].GetInt();
         wave->start_tic = value["start_tic"].GetInt();
         wave->spawn_interval = value["spawn_interval"].GetInt();
         wave->spawn_count = value["spawn_count"].GetInt();

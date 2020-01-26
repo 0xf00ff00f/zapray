@@ -38,11 +38,14 @@ struct Foe
 {
     Foe(const Wave *wave);
 
+    int type;
     float speed;
     const Trajectory *trajectory;
     glm::vec2 position;
     float trajectory_position;
     int damage_tics = 0;
+    int cur_frame = 0;
+    int cur_tic = 0;
 };
 
 class World
@@ -79,7 +82,6 @@ private:
     std::vector<Missile> missiles_;
     Player player_;
     CollisionMask player_sprite_; // XXX for now
-    CollisionMask foe_sprite_; // XXX for now
     CollisionMask missile_sprite_; // XXX for now
     int cur_tic_ = 0;
 #ifdef DRAW_ACTIVE_TRAJECTORIES
