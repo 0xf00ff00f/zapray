@@ -19,13 +19,19 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/string_cast.hpp>
 
+#include <boost/asio.hpp>
+
 #include <cassert>
 #include <array>
 #include <vector>
 #include <algorithm>
 #include <tuple>
 #include <memory>
+#include <thread>
 #include <iostream>
+#include <mutex>
+#include <condition_variable>
+#include <queue>
 
 #define DRAW_FRAMES
 
@@ -41,12 +47,190 @@ static constexpr const auto WindowHeight = ViewportHeight + 2 * ViewportMargin;
 static constexpr const auto TicsPerSecond = 60;
 static constexpr const auto MillisecondsPerTic = 1000.0f / TicsPerSecond;
 
+static constexpr auto ServerPort = 4141;
+
+template <typename T>
+class Queue
+{
+public:
+    void push(const T &value)
+    {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            data_.push(value);
+        }
+        not_empty_.notify_one();
+    }
+
+    T pop()
+    {
+        std::unique_lock<std::mutex> lock(mutex_);
+        not_empty_.wait(lock, [this]() {
+            return !data_.empty();
+        });
+
+        assert(!data_.empty());
+        const auto result = data_.front();
+        data_.pop();
+
+        return result;
+    }
+
+private:
+    std::mutex mutex_;
+    std::queue<T> data_;
+    std::condition_variable not_empty_;
+};
+
+using Message = unsigned;
+
+class NetworkThread
+{
+public:
+    NetworkThread()
+        : socket_(io_context_)
+    {
+    }
+
+    ~NetworkThread()
+    {
+        io_context_.stop(); // XXX can we actually do this?
+        thread_.join();
+    }
+
+    void start()
+    {
+        do_connect(); // XXX probably should do this without inheritance
+        thread_ = std::thread([this] { io_context_.run(); });
+    }
+
+    void write_message(const Message &message)
+    {
+        io_context_.post(
+            [this, message]
+            {
+                boost::system::error_code ignored_error;
+                boost::asio::write(socket_, boost::asio::buffer(&message, sizeof(message)), ignored_error);
+            });
+    }
+
+    Message read_remote_message()
+    {
+        return read_queue_.pop();
+    }
+
+    enum class Status
+    {
+        Connecting,
+        Connected,
+        Disconnected,
+    };
+
+    Status status() const { return status_; }
+
+protected:
+    virtual void do_connect() = 0;
+
+    void handle_connected(boost::system::error_code ec)
+    {
+        if (!ec)
+        {
+            status_ = Status::Connected;
+
+            boost::asio::ip::tcp::no_delay option(true);
+            socket_.set_option(option);
+
+            do_read();
+        }
+        else
+        {
+            status_ = Status::Disconnected;
+        }
+    }
+
+    void do_read()
+    {
+        boost::asio::async_read(socket_,
+            boost::asio::buffer(&read_message_, sizeof(read_message_)),
+            [this](boost::system::error_code ec, std::size_t bytes_transferred)
+            {
+                if (!ec)
+                {
+                    read_queue_.push(read_message_);
+                    do_read();
+                }
+                else
+                {
+                    socket_.close();
+                    status_ = Status::Disconnected;
+                    read_queue_.push(0); // to unblock anyone reading the queue
+                }
+            });
+    }
+
+    boost::asio::io_context io_context_;
+    boost::asio::ip::tcp::socket socket_;
+    std::thread thread_;
+    Message read_message_;
+    Queue<Message> read_queue_;
+    Status status_ = Status::Connecting;
+};
+
+class ServerNetworkThread : public NetworkThread
+{
+public:
+    ServerNetworkThread(int port)
+        : acceptor_(io_context_, boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v4(), port))
+    {
+    }
+
+private:
+    void do_connect() override
+    {
+        acceptor_.async_accept(socket_,
+            [this](boost::system::error_code ec)
+            {
+                handle_connected(ec);
+            });
+    }
+
+    boost::asio::ip::tcp::acceptor acceptor_;
+};
+
+class ClientNetworkThread : public NetworkThread
+{
+public:
+    ClientNetworkThread(std::string_view host, std::string_view service)
+    {
+        boost::asio::ip::tcp::resolver resolver(io_context_);
+        endpoint_iterator_ = resolver.resolve(host, service);
+    }
+
+private:
+    void do_connect() override
+    {
+        boost::asio::async_connect(socket_, endpoint_iterator_,
+            [this](boost::system::error_code ec, boost::asio::ip::tcp::resolver::iterator)
+            {
+                handle_connected(ec);
+            });
+    }
+
+    boost::asio::ip::tcp::resolver::iterator endpoint_iterator_;
+};
+
 class Game
 {
 public:
-    Game();
+    enum class NetworkMode
+    {
+        Client,
+        Server
+    };
 
-    void advance(float dt);
+    Game(NetworkMode mode, const std::string &host);
+
+    bool advance(float dt);
     void render() const;
 
 private:
@@ -62,9 +246,10 @@ private:
     Geometry<std::tuple<glm::vec2>> frame_;
 #endif
     float timestamp_ = 0.0f; // milliseconds
+    std::unique_ptr<NetworkThread> network_thread_;
 };
 
-Game::Game()
+Game::Game(NetworkMode mode, const std::string &host)
     : level_(load_level("resources/levels/level-0.json"))
     , local_(ViewportWidth, ViewportHeight)
     , remote_(ViewportWidth, ViewportHeight)
@@ -86,22 +271,40 @@ Game::Game()
     frame_program_.add_shader(GL_FRAGMENT_SHADER, "resources/shaders/dummy.frag");
     frame_program_.link();
 #endif
+
+    if (mode == NetworkMode::Server)
+        network_thread_.reset(new ServerNetworkThread(ServerPort));
+    else
+        network_thread_.reset(new ClientNetworkThread(host, std::to_string(ServerPort)));
+    network_thread_->start();
 }
 
-void Game::advance(float dt)
+bool Game::advance(float dt)
 {
+    const auto status = network_thread_->status();
+    if (status == NetworkThread::Status::Disconnected)
+        return false;
+
+    if (status == NetworkThread::Status::Connecting)
+        return true;
+
     timestamp_ += dt;
     while (timestamp_ > MillisecondsPerTic)
     {
         timestamp_ -= MillisecondsPerTic;
         advance_one_tic();
     }
+
+    return true;
 }
 
 void Game::advance_one_tic()
 {
+    network_thread_->write_message(g_dpad_state);
     local_.advance(g_dpad_state);
-    remote_.advance(0);
+
+    const auto remote_dpad_state = network_thread_->read_remote_message();
+    remote_.advance(remote_dpad_state);
 }
 
 void Game::render() const
@@ -137,9 +340,11 @@ void Game::render() const
     draw_viewport(local_, ViewportMargin);
     draw_viewport(remote_, 2 * ViewportMargin + ViewportWidth);
 
+    if (network_thread_->status() == NetworkThread::Status::Connecting)
     {
         const auto translate
-            = glm::translate(glm::mat4(1.0f), glm::vec3(2 * ViewportMargin + ViewportWidth, ViewportMargin, 0.0f));
+            = glm::translate(glm::mat4(1.0f),
+                             glm::vec3(2 * ViewportMargin + ViewportWidth, ViewportMargin, 0.0f));
         render_text(project * translate, 0.5f * ViewportWidth, 0.5f * ViewportHeight, "WAITING FOR PLAYER");
     }
 
@@ -162,8 +367,20 @@ static void update_dpad_state(GLFWwindow *window)
     g_dpad_state = state;
 }
 
-int main()
+int main(int argc, char *argv[])
 {
+    std::string host;
+    Game::NetworkMode mode;
+    if (argc == 1)
+    {
+        mode = Game::NetworkMode::Server;
+    }
+    else
+    {
+        mode = Game::NetworkMode::Client;
+        host = argv[1];
+    }
+
     if (!glfwInit())
         panic("glfwInit failed\n");
 
@@ -197,7 +414,7 @@ int main()
         g_sprite_batcher = new SpriteBatcher;
 
         {
-            Game game;
+            Game game(mode, host);
 
             while (!glfwWindowShouldClose(window))
             {
@@ -206,7 +423,9 @@ int main()
                 glClearColor(0, 0, 0, 0);
                 glClear(GL_COLOR_BUFFER_BIT);
 
-                game.advance(1000.f / 60.f);
+                if (!game.advance(1000.f / 60.f))
+                    break;
+
                 game.render();
 
                 glfwSwapBuffers(window);
