@@ -7,36 +7,36 @@
     "waves": [
         {
             "start_tic": 0,
-            "spawn_interval": 40,
-            "spawn_count": 5,
+            "spawn_interval": 30,
+            "spawn_count": 7,
             "foe_speed": 2,
             "trajectory": 0
         },
         {
             "start_tic": 280,
-            "spawn_interval": 40,
-            "spawn_count": 5,
+            "spawn_interval": 30,
+            "spawn_count": 7,
             "foe_speed": 2,
             "trajectory": 1
         },
         {
             "start_tic": 400,
-            "spawn_interval": 40,
-            "spawn_count": 3,
+            "spawn_interval": 30,
+            "spawn_count": 5,
             "foe_speed": 2,
             "trajectory": 2
         },
         {
             "start_tic": 600,
-            "spawn_interval": 40,
-            "spawn_count": 3,
+            "spawn_interval": 30,
+            "spawn_count": 5,
             "foe_speed": 2,
             "trajectory": 0
         },
         {
             "start_tic": 800,
-            "spawn_interval": 40,
-            "spawn_count": 3,
+            "spawn_interval": 30,
+            "spawn_count": 5,
             "foe_speed": 2,
             "trajectory": 1
         }
