@@ -7,8 +7,6 @@
 #include <vector>
 #include <memory>
 
-#define DRAW_ACTIVE_TRAJECTORIES
-
 #ifdef DRAW_ACTIVE_TRAJECTORIES
 #include "geometry.h"
 #include "shaderprogram.h"

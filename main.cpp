@@ -60,7 +60,7 @@ static void initialize_foe_classes()
     };
     static const std::vector<FoeInfo> foes = {
         {{ "small-foe-0.png", "small-foe-1.png", "small-foe-2.png", "small-foe-3.png" }, 4},
-        {{ "cube-foe-0.png", "cube-foe-1.png", "cube-foe-2.png", "cube-foe-3.png" }, 4},
+        {{ "cube-foe-0.png", "cube-foe-1.png", "cube-foe-2.png", "cube-foe-3.png" }, 6},
     };
 
     g_foe_classes.reserve(foes.size());
