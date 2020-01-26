@@ -5,7 +5,7 @@
 
 struct Tile;
 
-struct CollisionMask
+class CollisionMask
 {
 public:
     CollisionMask(const Tile *tile);
