@@ -17,6 +17,6 @@ add_executable(demo
     spritebatcher.cpp
     level.cpp
     world.cpp
-    util.cpp)
+    fileutil.cpp)
 
 target_link_libraries(demo ${CONAN_LIBS})

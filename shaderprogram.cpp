@@ -1,7 +1,7 @@
 #include "shaderprogram.h"
 
 #include "panic.h"
-#include "util.h"
+#include "fileutil.h"
 
 #include <array>
 

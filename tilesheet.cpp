@@ -2,7 +2,7 @@
 
 #include "texture.h"
 #include "pixmap.h"
-#include "util.h"
+#include "fileutil.h"
 
 #include <rapidjson/document.h>
 
