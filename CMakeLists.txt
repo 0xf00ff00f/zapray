@@ -16,6 +16,7 @@ add_executable(demo
     collisionmask.cpp
     spritebatcher.cpp
     level.cpp
+    world.cpp
     util.cpp)
 
 target_link_libraries(demo ${CONAN_LIBS})
