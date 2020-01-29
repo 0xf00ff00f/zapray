@@ -21,7 +21,6 @@ for frame in range(total_frames):
         t = float(total_frames - 1 - frame) / (total_frames - 1)
         cx = 0.5 * size - 10 * t
         cy = 0.5 * size - 5 * t
-        print '%f %f %f\n' % (t, cx, cy)
         f.write('P6\n')
         f.write('%d %d\n' % (size, size))
         f.write('255\n')
