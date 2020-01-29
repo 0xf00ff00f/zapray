@@ -33,6 +33,12 @@ struct Missile
     glm::vec2 position;
 };
 
+struct Explosion
+{
+    int cur_frame = 0;
+    glm::vec2 position;
+};
+
 struct Foe
 {
     Foe(const Wave *wave);
@@ -42,6 +48,7 @@ struct Foe
     const Trajectory *trajectory;
     glm::vec2 position;
     float trajectory_position;
+    int shields;
     int damage_tics = 0;
     int cur_frame = 0;
     int cur_tic = 0;
@@ -61,6 +68,7 @@ private:
     void advance_foes();
     void advance_player(unsigned dpad_state);
     void advance_missiles();
+    void advance_explosions();
     void spawn_missiles();
 
     struct ActiveWave
@@ -75,6 +83,7 @@ private:
     bool advance_active_wave(ActiveWave &wave);
     bool advance_foe(Foe &foe);
     bool advance_missile(Missile &missile);
+    bool advance_explosion(Explosion &explosion);
 
     const Level *cur_level_ = nullptr;
     int width_;
@@ -82,6 +91,7 @@ private:
     std::vector<std::unique_ptr<ActiveWave>> active_waves_;
     std::vector<Foe> foes_;
     std::vector<Missile> missiles_;
+    std::vector<Explosion> explosions_;
     Player player_;
     CollisionMask player_sprite_; // XXX for now
     CollisionMask missile_sprite_; // XXX for now

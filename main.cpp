@@ -57,10 +57,11 @@ static void initialize_foe_classes()
     {
         std::vector<std::string> frames;
         int tics_per_frame;
+        int shields;
     };
     static const std::vector<FoeInfo> foes = {
-        {{ "small-foe-0.png", "small-foe-1.png", "small-foe-2.png", "small-foe-3.png" }, 4},
-        {{ "cube-foe-0.png", "cube-foe-1.png", "cube-foe-2.png", "cube-foe-3.png" }, 6},
+        {{ "small-foe-0.png", "small-foe-1.png", "small-foe-2.png", "small-foe-3.png" }, 4, 2},
+        {{ "cube-foe-0.png", "cube-foe-1.png", "cube-foe-2.png", "cube-foe-3.png" }, 6, 5},
     };
 
     g_foe_classes.reserve(foes.size());
@@ -74,6 +75,7 @@ static void initialize_foe_classes()
             foe_class.frames.push_back({tile, CollisionMask(tile)});
         }
         foe_class.tics_per_frame = foe.tics_per_frame;
+        foe_class.shields = foe.shields;
         g_foe_classes.push_back(foe_class);
     }
 }
@@ -454,9 +456,7 @@ int main(int argc, char *argv[])
 
     {
         cache_tilesheet("resources/tilesheets/sheet.json");
-
         initialize_foe_classes();
-
         g_sprite_batcher = new SpriteBatcher;
 
         {

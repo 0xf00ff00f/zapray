@@ -15,4 +15,5 @@ struct FoeClass
     };
     std::vector<Frame> frames;
     int tics_per_frame;
+    int shields;
 };

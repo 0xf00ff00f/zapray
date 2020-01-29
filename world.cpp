@@ -48,6 +48,24 @@ static bool test_collision(const CollisionMask &sprite1, const glm::vec2 &pos1, 
     return sprite2.collides_with(sprite1, pos);
 }
 
+const std::vector<const Tile *> &get_explosion_frames()
+{
+    static const std::vector<const Tile *> tiles = []{
+        constexpr const auto NumExplosionFrames = 16;
+        std::vector<const Tile *> tiles;
+        tiles.reserve(NumExplosionFrames);
+        for (int i = 0; i < NumExplosionFrames; ++i)
+        {
+            const auto name = "explosion-" + std::to_string(i) + ".png";
+            auto *tile = get_tile(name);
+            assert(tile);
+            tiles.push_back(tile);
+        }
+        return tiles;
+    }();
+    return tiles;
+}
+
 Player::Player()
 {
     const auto frame_tiles = {"player-0.png", "player-1.png", "player-2.png", "player-3.png"};
@@ -67,6 +85,7 @@ Foe::Foe(const Wave *wave)
     , trajectory(wave->trajectory)
     , position(trajectory->point_at(0.0f))
     , trajectory_position(0.0f)
+    , shields(g_foe_classes[type].shields)
 {
 }
 
@@ -83,6 +102,8 @@ World::World(int width, int height)
     trajectory_program_.add_shader(GL_FRAGMENT_SHADER, "resources/shaders/dummy.frag");
     trajectory_program_.link();
 #endif
+
+    get_explosion_frames(); // preload
 }
 
 void World::initialize_level(const Level *level)
@@ -150,6 +171,10 @@ void World::render() const
         draw_tile(player_.sparks[spark_frame], player_.position - static_cast<float>(SpriteScale) * glm::vec2(-9.5, 12.5), 0);
         draw_tile(player_.sparks[spark_frame], player_.position - static_cast<float>(SpriteScale) * glm::vec2(9.5, 12.5), 0);
     }
+
+    const auto &explosion_frames = get_explosion_frames();
+    for (const auto &explosion : explosions_)
+        draw_tile(explosion_frames[explosion.cur_frame], explosion.position, -1);
 }
 
 World::ActiveWave::ActiveWave(const Wave *wave)
@@ -180,6 +205,7 @@ void World::advance(unsigned dpad_state)
     advance_missiles();
     advance_foes();
     advance_player(dpad_state);
+    advance_explosions();
 }
 
 void World::advance_waves()
@@ -257,6 +283,18 @@ void World::advance_missiles()
     }
 }
 
+void World::advance_explosions()
+{
+    auto it = explosions_.begin();
+    while (it != explosions_.end())
+    {
+        if (!advance_explosion(*it))
+            it = explosions_.erase(it);
+        else
+            ++it;
+    }
+}
+
 bool World::advance_active_wave(ActiveWave &active_wave)
 {
     const auto *wave = active_wave.wave;
@@ -302,15 +340,31 @@ bool World::advance_missile(Missile &missile)
     if (missile.position.y < min_y)
         return false;
 
-    for (auto &foe : foes_)
-    {
+    auto it = std::find_if(foes_.begin(), foes_.end(), [this, &missile](Foe &foe) {
         const auto &frame = g_foe_classes[foe.type].frames[foe.cur_frame];
-        if (test_collision(missile_sprite_, missile.position, frame.collision_mask, foe.position))
+        return test_collision(missile_sprite_, missile.position, frame.collision_mask, foe.position);
+    });
+    if (it != foes_.end())
+    {
+        auto &foe = *it;
+        --foe.shields;
+        if (foe.shields > 0)
         {
             foe.damage_tics = DamageFlashInterval;
-            return false;
         }
+        else
+        {
+            explosions_.push_back({0, foe.position});
+            foes_.erase(it);
+        }
+        return false;
     }
 
     return true;
+}
+
+bool World::advance_explosion(Explosion &explosion)
+{
+    ++explosion.cur_frame;
+    return explosion.cur_frame < get_explosion_frames().size();
 }
