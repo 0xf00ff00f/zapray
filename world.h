@@ -22,6 +22,7 @@ struct Player
     Player();
 
     std::vector<const Tile *> frames;
+    std::vector<const Tile *> sparks;
     glm::vec2 position;
     int cur_frame = 0;
     int fire_tics = 0;

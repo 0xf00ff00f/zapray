@@ -51,8 +51,14 @@ static bool test_collision(const CollisionMask &sprite1, const glm::vec2 &pos1, 
 Player::Player()
 {
     const auto frame_tiles = {"player-0.png", "player-1.png", "player-2.png", "player-3.png"};
-    for (const auto tile : frame_tiles)
-        frames.push_back(get_tile(tile));
+    std::transform(frame_tiles.begin(), frame_tiles.end(), std::back_inserter(frames), [](const auto tile) {
+        return get_tile(tile);
+    });
+
+    const auto spark_tiles = {"spark-0.png", "spark-1.png", "spark-2.png", "spark-3.png"};
+    std::transform(spark_tiles.begin(), spark_tiles.end(), std::back_inserter(sparks), [](const auto tile) {
+        return get_tile(tile);
+    });
 }
 
 Foe::Foe(const Wave *wave)
@@ -138,6 +144,12 @@ void World::render() const
         draw_tile(missile_tile, missile.position, 0);
 
     draw_tile(player_.frames[player_.cur_frame], player_.position, 0);
+    if (player_.fire_tics > 0)
+    {
+        int spark_frame = (MissileSpawnInterval - player_.fire_tics) * player_.sparks.size() / MissileSpawnInterval;
+        draw_tile(player_.sparks[spark_frame], player_.position - static_cast<float>(SpriteScale) * glm::vec2(-9.5, 12.5), 0);
+        draw_tile(player_.sparks[spark_frame], player_.position - static_cast<float>(SpriteScale) * glm::vec2(9.5, 12.5), 0);
+    }
 }
 
 World::ActiveWave::ActiveWave(const Wave *wave)
